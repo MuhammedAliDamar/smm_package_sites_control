@@ -43,7 +43,8 @@ type SyncRow = {
 
 type OrderRow = {
   id: number; username: string; serviceName: string | null;
-  link: string | null; quantity: number | null; remains: number | null;
+  link: string | null; quantity: number | null;
+  startCount: number | null; remains: number | null;
   status: string; chargeValue: number | null; chargeCurrency: string | null;
   provider: string | null; createdAt: string;
 };
@@ -110,7 +111,7 @@ function StatCard({
 
 const SORT_LABELS: Record<string, string> = {
   id: "ID", username: "User", serviceName: "Service",
-  quantity: "Qty", remains: "Remains", status: "Status",
+  quantity: "Qty", startCount: "Start", remains: "Remains", status: "Status",
   chargeValue: "Charge", createdAt: "Date",
 };
 
@@ -445,6 +446,7 @@ export default function DashboardClient({
                   <SortHeader field="username">User</SortHeader>
                   <SortHeader field="serviceName">Service</SortHeader>
                   <SortHeader field="quantity">Qty</SortHeader>
+                  <SortHeader field="startCount">Start</SortHeader>
                   <SortHeader field="remains">Remains</SortHeader>
                   <SortHeader field="status">Status</SortHeader>
                   <SortHeader field="chargeValue">Charge</SortHeader>
@@ -453,7 +455,7 @@ export default function DashboardClient({
               </thead>
               <tbody>
                 {orders.list.length === 0 && (
-                  <tr><td colSpan={8} style={{ textAlign: "center", padding: 32, color: "var(--text-muted)" }}>
+                  <tr><td colSpan={9} style={{ textAlign: "center", padding: 32, color: "var(--text-muted)" }}>
                     No orders found
                   </td></tr>
                 )}
@@ -473,6 +475,7 @@ export default function DashboardClient({
                       ) : (o.serviceName ?? "—")}
                     </td>
                     <td>{o.quantity?.toLocaleString("en-US") ?? "—"}</td>
+                    <td>{o.startCount?.toLocaleString("en-US") ?? "—"}</td>
                     <td>{o.remains?.toLocaleString("en-US") ?? "—"}</td>
                     <td><StatusBadge status={o.status} /></td>
                     <td style={{ fontVariantNumeric: "tabular-nums" }}>

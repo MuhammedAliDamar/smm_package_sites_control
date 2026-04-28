@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 const PAGE_SIZE = 50;
 
 const SORTABLE_FIELDS = new Set([
-  "id", "username", "serviceName", "quantity", "remains",
+  "id", "username", "serviceName", "quantity", "startCount", "remains",
   "status", "chargeValue", "createdAt",
 ]);
 
@@ -175,6 +175,7 @@ export default async function DashboardPage({
           serviceName: o.serviceName,
           link: o.link,
           quantity: o.quantity,
+          startCount: o.startCount,
           remains: o.remains,
           status: o.status,
           chargeValue: o.chargeValue ? Number(o.chargeValue) : null,
