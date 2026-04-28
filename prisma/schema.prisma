@@ -1,0 +1,97 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model AdminUser {
+  id                   Int       @id @default(autoincrement())
+  email                String    @unique
+  passwordHash         String
+  failedLoginAttempts  Int       @default(0)
+  lockedUntil          DateTime?
+  lastLoginAt          DateTime?
+  createdAt            DateTime  @default(now())
+  sessions             Session[]
+}
+
+model Session {
+  id          String    @id
+  adminUserId Int
+  expiresAt   DateTime
+  createdAt   DateTime  @default(now())
+  ipAddress   String?
+  userAgent   String?
+  adminUser   AdminUser @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
+
+  @@index([adminUserId])
+  @@index([expiresAt])
+}
+
+model LoginAttempt {
+  id         Int      @id @default(autoincrement())
+  identifier String
+  ipAddress  String
+  success    Boolean
+  createdAt  DateTime @default(now())
+
+  @@index([identifier, createdAt])
+  @@index([ipAddress, createdAt])
+}
+
+model TrackedUsername {
+  id           Int       @id @default(autoincrement())
+  username     String    @unique
+  active       Boolean   @default(true)
+  lastSyncedAt DateTime?
+  addedAt      DateTime  @default(now())
+  note         String?
+  orders       Order[]
+}
+
+model Order {
+  id                  Int      @id
+  externalId          String?
+  username            String
+  serviceId           Int?
+  serviceName         String?
+  serviceType         String?
+  provider            String?
+  creationType        String?
+  mode                String?
+  link                String?
+  quantity            Int?
+  startCount          Int?
+  remains             Int?
+  status              String
+  chargeValue         Decimal? @db.Decimal(20, 10)
+  chargeCurrency      String?
+  providerChargeValue Decimal? @db.Decimal(20, 10)
+  ipAddress           String?
+  createdAt           DateTime
+  fetchedAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  raw                 Json
+
+  trackedUser TrackedUsername? @relation(fields: [username], references: [username], onDelete: SetNull)
+
+  @@index([username])
+  @@index([status])
+  @@index([createdAt])
+  @@index([serviceId])
+}
+
+model SyncRun {
+  id             Int       @id @default(autoincrement())
+  startedAt      DateTime  @default(now())
+  finishedAt     DateTime?
+  usernamesCount Int       @default(0)
+  ordersFetched  Int       @default(0)
+  ordersInserted Int       @default(0)
+  ordersUpdated  Int       @default(0)
+  error          String?
+  triggeredBy    String    @default("cron")
+}
