@@ -26,8 +26,9 @@ export default function LoginPage() {
       return;
     }
     startTransition(() => {
-      const redirect = params.get("redirect") || "/dashboard";
-      router.push(redirect);
+      const raw = params.get("redirect") ?? "";
+      const safe = raw.startsWith("/") && !raw.startsWith("//") ? raw : "/dashboard";
+      router.push(safe);
       router.refresh();
     });
   }
