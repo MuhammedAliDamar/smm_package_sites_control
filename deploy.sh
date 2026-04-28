@@ -23,9 +23,15 @@ REPO_URL="https://github.com/MuhammedAliDamar/smm_package_sites_control.git"
 DB_NAME="thorsmm_admin"
 DB_USER="thorsmm"
 APP_PORT="3000"
-THORSMM_API_KEY="yyoa3mpknhp6yt840517jycwdo209qkwjmjfhx1m3mgttgg4iy6nokyclq5mu5l7"
 THORSMM_API_BASE="https://thorsmmprovider.com/adminapi/v2"
 CREDS_FILE="/root/thorsmm-credentials.txt"
+
+# THORSMM_API_KEY env var olarak verilmediyse interaktif sor
+if [[ -z "${THORSMM_API_KEY:-}" ]]; then
+  read -rsp "ThorSMM API key girin: " THORSMM_API_KEY
+  echo
+fi
+[[ -z "${THORSMM_API_KEY}" ]] && { echo "API key bos olamaz" >&2; exit 1; }
 
 ###############################################################################
 # Yardimcilar
