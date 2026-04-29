@@ -59,7 +59,13 @@ type OrdersBlock = {
 
 function fmt(d: string | null | undefined) {
   if (!d) return "—";
-  return new Date(d).toLocaleString("en-US", { dateStyle: "short", timeStyle: "short" });
+  const dt = new Date(d);
+  const dd = String(dt.getDate()).padStart(2, "0");
+  const mm = String(dt.getMonth() + 1).padStart(2, "0");
+  const yyyy = dt.getFullYear();
+  const hh = String(dt.getHours()).padStart(2, "0");
+  const mi = String(dt.getMinutes()).padStart(2, "0");
+  return `${dd}.${mm}.${yyyy} ${hh}:${mi}`;
 }
 function dur(start: string, end: string | null) {
   if (!end) return "...";
