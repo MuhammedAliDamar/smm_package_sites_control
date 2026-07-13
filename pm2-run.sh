@@ -20,7 +20,6 @@ command -v pm2 >/dev/null || err "pm2 kurulu degil:  npm i -g pm2"
 [[ -d .next ]] || err ".next yok. once: npm run build"
 
 set -a; source "$ENV_FILE"; set +a
-[[ -n "${CRON_SECRET:-}" ]]  || err "CRON_SECRET .env'de yok"
 [[ -n "${PORT:-3000}" ]]     || PORT=3000
 
 pm2 delete "$APP_NAME" "$CRON_NAME" 2>/dev/null || true
@@ -29,10 +28,9 @@ pm2 delete "$APP_NAME" "$CRON_NAME" 2>/dev/null || true
 pm2 start npm --name "$APP_NAME" --update-env -- run start
 ok "$APP_NAME baslatildi (port $PORT)"
 
-# 10 dakikalik cron — local API'ye Bearer ile vurur
-CRON_CMD="curl -s -m 270 -X POST -H 'Authorization: Bearer ${CRON_SECRET}' http://localhost:${PORT}/api/cron/sync >/dev/null"
-pm2 start --name "$CRON_NAME" --cron-restart '*/10 * * * *' --no-autorestart \
-  /bin/bash -- -c "$CRON_CMD"
+# 10 dakikalik cron — setInterval tabanli, dogrudan DB sync
+pm2 start --name "$CRON_NAME" --update-env \
+  npx -- tsx scripts/cron-local.ts
 ok "$CRON_NAME 10 dakikalik cron baslatildi"
 
 pm2 save
