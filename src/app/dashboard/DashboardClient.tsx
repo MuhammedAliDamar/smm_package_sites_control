@@ -190,7 +190,7 @@ export default function DashboardClient({
 
   async function checkDrop() {
     const eligibleIds = orders.list
-      .filter((o) => o.link && o.quantity && o.startCount && o.status.toLowerCase() === "completed")
+      .filter((o) => o.link && o.quantity && o.startCount)
       .map((o) => o.id);
     if (eligibleIds.length === 0) return;
     setChecking(true);
