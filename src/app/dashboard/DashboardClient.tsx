@@ -150,14 +150,16 @@ export default function DashboardClient({
   useEffect(() => {
     if (didAutoSync.current) return;
     didAutoSync.current = true;
+    setSyncing(true);
     fetch("/api/cron/sync", { method: "POST" }).then(() => {
       startTransition(() => router.refresh());
-    }).catch(() => {});
+    }).catch(() => {}).finally(() => setSyncing(false));
 
     const interval = setInterval(() => {
+      setSyncing(true);
       fetch("/api/cron/sync", { method: "POST" }).then(() => {
         startTransition(() => router.refresh());
-      }).catch(() => {});
+      }).catch(() => {}).finally(() => setSyncing(false));
     }, 10 * 60 * 1000);
     return () => clearInterval(interval);
   }, [router, startTransition]);
