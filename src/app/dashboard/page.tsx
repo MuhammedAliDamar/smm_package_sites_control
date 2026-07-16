@@ -8,7 +8,7 @@ const PAGE_SIZE = 50;
 
 const SORTABLE_FIELDS = new Set([
   "id", "username", "serviceName", "quantity", "startCount", "remains",
-  "status", "chargeValue", "createdAt",
+  "dropRate", "status", "chargeValue", "createdAt",
 ]);
 
 function parseDate(s?: string): Date | undefined {
@@ -77,6 +77,7 @@ export default async function DashboardPage({
     statsStatusGroups,
     statsChargeSum,
     statsLast24h,
+    statsAvgDrop,
     lastSync,
     trackedRows,
     recentSyncs,
@@ -96,6 +97,10 @@ export default async function DashboardPage({
     }),
     prisma.order.count({
       where: { ...userScope, createdAt: { gt: new Date(Date.now() - 86400_000) } },
+    }),
+    prisma.order.aggregate({
+      _avg: { dropRate: true },
+      where: { ...userScope, dropRate: { not: null } },
     }),
     prisma.syncRun.findFirst({ orderBy: { startedAt: "desc" } }),
     prisma.trackedUsername.findMany({
@@ -136,6 +141,7 @@ export default async function DashboardPage({
         partial,
         chargeSum: Number(statsChargeSum._sum.chargeValue ?? 0),
         last24h: statsLast24h,
+        avgDropRate: Number(statsAvgDrop._avg.dropRate ?? 0),
         lastSync: lastSync
           ? {
               startedAt: lastSync.startedAt.toISOString(),
@@ -177,6 +183,9 @@ export default async function DashboardPage({
           quantity: o.quantity,
           startCount: o.startCount,
           remains: o.remains,
+          currentCount: o.currentCount,
+          dropRate: o.dropRate ? Number(o.dropRate) : null,
+          dropCheckedAt: o.dropCheckedAt?.toISOString() ?? null,
           status: o.status,
           chargeValue: o.chargeValue ? Number(o.chargeValue) : null,
           chargeCurrency: o.chargeCurrency,

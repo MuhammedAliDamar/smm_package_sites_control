@@ -6,6 +6,7 @@ import {
   ListOrdered, CheckCircle2, Clock, XCircle, DollarSign,
   Users as UsersIcon, RefreshCw, AlertTriangle, Activity,
   Plus, Trash2, Power, Search, X, Globe, ArrowUp, ArrowDown,
+  TrendingDown,
 } from "lucide-react";
 
 type Stats = {
@@ -17,6 +18,7 @@ type Stats = {
   partial: number;
   chargeSum: number;
   last24h: number;
+  avgDropRate: number;
   lastSync: {
     startedAt: string;
     finishedAt: string | null;
@@ -45,6 +47,8 @@ type OrderRow = {
   id: number; username: string; serviceName: string | null;
   link: string | null; quantity: number | null;
   startCount: number | null; remains: number | null;
+  currentCount: number | null; dropRate: number | null;
+  dropCheckedAt: string | null;
   status: string; chargeValue: number | null; chargeCurrency: string | null;
   provider: string | null; createdAt: string;
 };
@@ -115,10 +119,16 @@ function StatCard({
   );
 }
 
+function dropColor(rate: number): string {
+  if (rate <= 5) return "var(--success)";
+  if (rate <= 15) return "var(--warning)";
+  return "var(--danger)";
+}
+
 const SORT_LABELS: Record<string, string> = {
   id: "ID", username: "User", serviceName: "Service",
-  quantity: "Qty", startCount: "Start", remains: "Remains", status: "Status",
-  chargeValue: "Charge", createdAt: "Date",
+  quantity: "Qty", startCount: "Start", remains: "Remains", dropRate: "Drop",
+  status: "Status", chargeValue: "Charge", createdAt: "Date",
 };
 
 export default function DashboardClient({
@@ -133,6 +143,7 @@ export default function DashboardClient({
   const [newNote, setNewNote] = useState("");
   const [addError, setAddError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [checking, setChecking] = useState(false);
   const [searchInput, setSearchInput] = useState(orders.filters.q);
 
   function pushFilters(next: Partial<Filters & { page: string; sort: string; dir: string }>) {
@@ -174,6 +185,24 @@ export default function DashboardClient({
       startTransition(() => router.refresh());
     } finally {
       setSyncing(false);
+    }
+  }
+
+  async function checkDrop() {
+    const eligibleIds = orders.list
+      .filter((o) => o.link && o.quantity && o.startCount && o.status.toLowerCase() === "completed")
+      .map((o) => o.id);
+    if (eligibleIds.length === 0) return;
+    setChecking(true);
+    try {
+      await fetch("/api/orders/check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: eligibleIds.slice(0, 50) }),
+      });
+      startTransition(() => router.refresh());
+    } finally {
+      setChecking(false);
     }
   }
 
@@ -274,6 +303,7 @@ export default function DashboardClient({
         <StatCard label="In Progress" value={stats.inProgress.toLocaleString("en-US")} tone="info" icon={Clock} hint={`Pending: ${stats.pending}`} />
         <StatCard label="Partial" value={stats.partial.toLocaleString("en-US")} tone="warning" icon={Activity} />
         <StatCard label="Canceled" value={stats.canceled.toLocaleString("en-US")} tone="danger" icon={XCircle} />
+        <StatCard label="Avg Drop Rate" value={`%${stats.avgDropRate.toFixed(1)}`} tone={stats.avgDropRate > 15 ? "danger" : stats.avgDropRate > 5 ? "warning" : "success"} icon={TrendingDown} />
         <StatCard label="Total Charge" value={`$${stats.chargeSum.toFixed(2)}`} icon={DollarSign} />
         <StatCard label="Tracked Users" value={stats.trackedActive} hint={`Total ${stats.trackedTotal}`} icon={UsersIcon} />
         <StatCard
@@ -387,7 +417,13 @@ export default function DashboardClient({
                 Orders
                 {stats.scopeUser && <span style={{ color: "var(--accent)", fontWeight: 500 }}>· @{stats.scopeUser}</span>}
               </h2>
-              <span className="badge">{orders.total.toLocaleString("en-US")} results</span>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <button className="btn btn-sm" onClick={checkDrop} disabled={checking}>
+                  <TrendingDown size={13} />
+                  {checking ? "Checking..." : "Check Drop"}
+                </button>
+                <span className="badge">{orders.total.toLocaleString("en-US")} results</span>
+              </div>
             </div>
 
             <div className="toolbar">
@@ -454,6 +490,7 @@ export default function DashboardClient({
                   <SortHeader field="quantity">Qty</SortHeader>
                   <SortHeader field="startCount">Start</SortHeader>
                   <SortHeader field="remains">Remains</SortHeader>
+                  <SortHeader field="dropRate">Drop</SortHeader>
                   <SortHeader field="status">Status</SortHeader>
                   <SortHeader field="chargeValue">Charge</SortHeader>
                   <SortHeader field="createdAt">Date</SortHeader>
@@ -461,7 +498,7 @@ export default function DashboardClient({
               </thead>
               <tbody>
                 {orders.list.length === 0 && (
-                  <tr><td colSpan={9} style={{ textAlign: "center", padding: 32, color: "var(--text-muted)" }}>
+                  <tr><td colSpan={10} style={{ textAlign: "center", padding: 32, color: "var(--text-muted)" }}>
                     No orders found
                   </td></tr>
                 )}
@@ -483,6 +520,13 @@ export default function DashboardClient({
                     <td>{o.quantity?.toLocaleString("en-US") ?? "—"}</td>
                     <td>{o.startCount?.toLocaleString("en-US") ?? "—"}</td>
                     <td>{o.remains?.toLocaleString("en-US") ?? "—"}</td>
+                    <td style={{ fontVariantNumeric: "tabular-nums" }}>
+                      {o.dropRate != null ? (
+                        <span style={{ color: dropColor(o.dropRate), fontWeight: 600 }} title={o.dropCheckedAt ? `Checked: ${fmt(o.dropCheckedAt)}` : ""}>
+                          %{o.dropRate.toFixed(1)}
+                        </span>
+                      ) : "—"}
+                    </td>
                     <td><StatusBadge status={o.status} /></td>
                     <td style={{ fontVariantNumeric: "tabular-nums" }}>
                       {o.chargeValue != null ? `$${o.chargeValue.toFixed(4)}` : "—"}

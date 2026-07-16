@@ -10,4 +10,6 @@ export const env = {
   SESSION_SECRET: required("SESSION_SECRET"),
   CRON_SECRET: required("CRON_SECRET"),
   SYNC_INTERVAL_MINUTES: Number(process.env.SYNC_INTERVAL_MINUTES ?? 10),
+  COUNTER_API_BASE: process.env.COUNTER_API_BASE ?? "https://check.globaprovider.com",
+  COUNTER_API_KEY: process.env.COUNTER_API_KEY ?? "",
 };

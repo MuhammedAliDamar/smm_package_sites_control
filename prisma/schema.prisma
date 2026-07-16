@@ -66,6 +66,9 @@ model Order {
   quantity            Int?
   startCount          Int?
   remains             Int?
+  currentCount        Int?
+  dropRate            Decimal? @db.Decimal(10, 2)
+  dropCheckedAt       DateTime?
   status              String
   chargeValue         Decimal? @db.Decimal(20, 10)
   chargeCurrency      String?
