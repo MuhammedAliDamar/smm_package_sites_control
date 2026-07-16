@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   ListOrdered, CheckCircle2, Clock, XCircle, DollarSign,
@@ -145,6 +145,22 @@ export default function DashboardClient({
   const [syncing, setSyncing] = useState(false);
   const [checking, setChecking] = useState(false);
   const [searchInput, setSearchInput] = useState(orders.filters.q);
+  const didAutoSync = useRef(false);
+
+  useEffect(() => {
+    if (didAutoSync.current) return;
+    didAutoSync.current = true;
+    fetch("/api/cron/sync", { method: "POST" }).then(() => {
+      startTransition(() => router.refresh());
+    }).catch(() => {});
+
+    const interval = setInterval(() => {
+      fetch("/api/cron/sync", { method: "POST" }).then(() => {
+        startTransition(() => router.refresh());
+      }).catch(() => {});
+    }, 10 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [router, startTransition]);
 
   function pushFilters(next: Partial<Filters & { page: string; sort: string; dir: string }>) {
     const merged: Record<string, string> = {
