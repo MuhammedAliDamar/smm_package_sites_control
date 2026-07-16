@@ -207,6 +207,8 @@ export default function DashboardClient({
   }
 
   const [checkProgress, setCheckProgress] = useState("");
+  const [dropResults, setDropResults] = useState<Record<number, number | null>>({});
+  const [checkingIds, setCheckingIds] = useState<Set<number>>(new Set());
 
   async function checkDrop() {
     const eligibleIds = orders.list
@@ -214,21 +216,38 @@ export default function DashboardClient({
       .map((o) => o.id);
     if (eligibleIds.length === 0) return;
     setChecking(true);
+    setCheckingIds(new Set(eligibleIds));
     setCheckProgress(`0/${eligibleIds.length}`);
     try {
       for (let i = 0; i < eligibleIds.length; i += 10) {
         const batch = eligibleIds.slice(i, i + 10);
-        await fetch("/api/orders/check", {
+        const res = await fetch("/api/orders/check", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ ids: batch }),
         });
+        const json = await res.json();
+        if (json.results) {
+          setDropResults((prev) => {
+            const next = { ...prev };
+            for (const r of json.results) {
+              next[r.orderId] = r.dropRate;
+            }
+            return next;
+          });
+          setCheckingIds((prev) => {
+            const next = new Set(prev);
+            for (const id of batch) next.delete(id);
+            return next;
+          });
+        }
         setCheckProgress(`${Math.min(i + 10, eligibleIds.length)}/${eligibleIds.length}`);
-        startTransition(() => router.refresh());
       }
+      startTransition(() => router.refresh());
     } finally {
       setChecking(false);
       setCheckProgress("");
+      setCheckingIds(new Set());
     }
   }
 
@@ -547,15 +566,14 @@ export default function DashboardClient({
                     <td>{o.startCount?.toLocaleString("en-US") ?? "—"}</td>
                     <td>{o.remains?.toLocaleString("en-US") ?? "—"}</td>
                     <td style={{ fontVariantNumeric: "tabular-nums" }}>
-                      {o.dropRate != null ? (
-                        o.dropRate <= 0 ? (
-                          <span style={{ color: "var(--success)", fontWeight: 600 }} title={o.dropCheckedAt ? `Checked: ${fmt(o.dropCheckedAt)}` : ""}>No Drop</span>
-                        ) : (
-                          <span style={{ color: dropColor(o.dropRate), fontWeight: 600 }} title={o.dropCheckedAt ? `Checked: ${fmt(o.dropCheckedAt)}` : ""}>
-                            %{o.dropRate.toFixed(1)}
-                          </span>
-                        )
-                      ) : "—"}
+                      {checkingIds.has(o.id) ? (
+                        <span className="spinner" style={{ display: "inline-block", width: 16, height: 16, border: "2px solid var(--border)", borderTopColor: "var(--primary)", borderRadius: "50%", animation: "spin 0.6s linear infinite" }} />
+                      ) : (() => {
+                        const rate = dropResults[o.id] !== undefined ? dropResults[o.id] : o.dropRate;
+                        if (rate == null) return "—";
+                        if (rate <= 0) return <span style={{ color: "var(--success)", fontWeight: 600 }} title={o.dropCheckedAt ? `Checked: ${fmt(o.dropCheckedAt)}` : ""}>No Drop</span>;
+                        return <span style={{ color: dropColor(rate), fontWeight: 600 }} title={o.dropCheckedAt ? `Checked: ${fmt(o.dropCheckedAt)}` : ""}>%{rate.toFixed(1)}</span>;
+                      })()}
                     </td>
                     <td><StatusBadge status={o.status} /></td>
                     <td style={{ fontVariantNumeric: "tabular-nums" }}>
