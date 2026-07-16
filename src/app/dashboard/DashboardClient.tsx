@@ -207,7 +207,7 @@ export default function DashboardClient({
   }
 
   const [checkProgress, setCheckProgress] = useState("");
-  const [dropResults, setDropResults] = useState<Record<number, number | null>>({});
+  const [dropResults, setDropResults] = useState<Record<number, number | null | "error">>({});
   const [checkingIds, setCheckingIds] = useState<Set<number>>(new Set());
 
   async function checkDrop() {
@@ -231,7 +231,7 @@ export default function DashboardClient({
           setDropResults((prev) => {
             const next = { ...prev };
             for (const r of json.results) {
-              next[r.orderId] = r.dropRate;
+              next[r.orderId] = r.error ? "error" : r.dropRate;
             }
             return next;
           });
@@ -569,10 +569,11 @@ export default function DashboardClient({
                       {checkingIds.has(o.id) ? (
                         <span className="spinner" style={{ display: "inline-block", width: 16, height: 16, border: "2px solid var(--border)", borderTopColor: "var(--primary)", borderRadius: "50%", animation: "spin 0.6s linear infinite" }} />
                       ) : (() => {
-                        const rate = dropResults[o.id] !== undefined ? dropResults[o.id] : o.dropRate;
-                        if (rate == null) return "—";
-                        if (rate <= 0) return <span style={{ color: "var(--success)", fontWeight: 600 }} title={o.dropCheckedAt ? `Checked: ${fmt(o.dropCheckedAt)}` : ""}>No Drop</span>;
-                        return <span style={{ color: dropColor(rate), fontWeight: 600 }} title={o.dropCheckedAt ? `Checked: ${fmt(o.dropCheckedAt)}` : ""}>%{rate.toFixed(1)}</span>;
+                        const raw = dropResults[o.id] !== undefined ? dropResults[o.id] : o.dropRate;
+                        if (raw === "error") return <span style={{ color: "var(--danger, #ef4444)", fontWeight: 600 }}>Error</span>;
+                        if (raw == null) return "—";
+                        if (raw <= 0) return <span style={{ color: "var(--success)", fontWeight: 600 }} title={o.dropCheckedAt ? `Checked: ${fmt(o.dropCheckedAt)}` : ""}>No Drop</span>;
+                        return <span style={{ color: dropColor(raw), fontWeight: 600 }} title={o.dropCheckedAt ? `Checked: ${fmt(o.dropCheckedAt)}` : ""}>%{raw.toFixed(1)}</span>;
                       })()}
                     </td>
                     <td><StatusBadge status={o.status} /></td>
