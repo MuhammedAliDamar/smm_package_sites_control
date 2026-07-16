@@ -206,21 +206,29 @@ export default function DashboardClient({
     }
   }
 
+  const [checkProgress, setCheckProgress] = useState("");
+
   async function checkDrop() {
     const eligibleIds = orders.list
       .filter((o) => o.link && o.quantity && o.startCount)
       .map((o) => o.id);
     if (eligibleIds.length === 0) return;
     setChecking(true);
+    setCheckProgress(`0/${eligibleIds.length}`);
     try {
-      await fetch("/api/orders/check", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids: eligibleIds.slice(0, 50) }),
-      });
-      startTransition(() => router.refresh());
+      for (let i = 0; i < eligibleIds.length; i += 10) {
+        const batch = eligibleIds.slice(i, i + 10);
+        await fetch("/api/orders/check", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ids: batch }),
+        });
+        setCheckProgress(`${Math.min(i + 10, eligibleIds.length)}/${eligibleIds.length}`);
+        startTransition(() => router.refresh());
+      }
     } finally {
       setChecking(false);
+      setCheckProgress("");
     }
   }
 
@@ -438,7 +446,7 @@ export default function DashboardClient({
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <button className="btn btn-sm" onClick={checkDrop} disabled={checking}>
                   <TrendingDown size={13} />
-                  {checking ? "Checking..." : "Check Drop"}
+                  {checking ? `Checking ${checkProgress}` : "Check Drop"}
                 </button>
                 <span className="badge">{orders.total.toLocaleString("en-US")} results</span>
               </div>
