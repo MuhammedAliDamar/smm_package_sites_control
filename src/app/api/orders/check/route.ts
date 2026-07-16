@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { checkOrder } from "@/lib/checker";
+import { checkOrder, type CheckResult } from "@/lib/checker";
+
+const BATCH_SIZE = 10;
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
@@ -24,20 +26,28 @@ export async function POST(req: NextRequest) {
     },
   });
 
-  const results = [];
-  for (const order of orders) {
-    const result = await checkOrder(order);
-    if (result.currentCount !== null) {
-      await prisma.order.update({
-        where: { id: order.id },
-        data: {
-          currentCount: result.currentCount,
-          dropRate: result.dropRate,
-          dropCheckedAt: new Date(),
-        },
-      });
-    }
-    results.push(result);
+  const results: CheckResult[] = [];
+
+  for (let i = 0; i < orders.length; i += BATCH_SIZE) {
+    const batch = orders.slice(i, i + BATCH_SIZE);
+    const batchResults = await Promise.all(batch.map((order) => checkOrder(order)));
+
+    await Promise.all(
+      batchResults.map((result) => {
+        if (result.currentCount !== null) {
+          return prisma.order.update({
+            where: { id: result.orderId },
+            data: {
+              currentCount: result.currentCount,
+              dropRate: result.dropRate,
+              dropCheckedAt: new Date(),
+            },
+          });
+        }
+      }),
+    );
+
+    results.push(...batchResults);
   }
 
   return NextResponse.json({ results });
