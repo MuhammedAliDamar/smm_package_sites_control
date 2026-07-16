@@ -548,9 +548,13 @@ export default function DashboardClient({
                     <td>{o.remains?.toLocaleString("en-US") ?? "—"}</td>
                     <td style={{ fontVariantNumeric: "tabular-nums" }}>
                       {o.dropRate != null ? (
-                        <span style={{ color: dropColor(o.dropRate), fontWeight: 600 }} title={o.dropCheckedAt ? `Checked: ${fmt(o.dropCheckedAt)}` : ""}>
-                          %{o.dropRate.toFixed(1)}
-                        </span>
+                        o.dropRate <= 0 ? (
+                          <span style={{ color: "var(--success)", fontWeight: 600 }} title={o.dropCheckedAt ? `Checked: ${fmt(o.dropCheckedAt)}` : ""}>No Drop</span>
+                        ) : (
+                          <span style={{ color: dropColor(o.dropRate), fontWeight: 600 }} title={o.dropCheckedAt ? `Checked: ${fmt(o.dropCheckedAt)}` : ""}>
+                            %{o.dropRate.toFixed(1)}
+                          </span>
+                        )
                       ) : "—"}
                     </td>
                     <td><StatusBadge status={o.status} /></td>
