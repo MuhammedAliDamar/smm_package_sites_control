@@ -292,6 +292,19 @@ export default function DashboardClient({
     }
   }
 
+  async function markRefilled(orderId: number) {
+    try {
+      const res = await fetch("/api/orders/refill", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: orderId }),
+      });
+      if (res.ok) startTransition(() => router.refresh());
+    } catch {
+      /* sessiz */
+    }
+  }
+
   const [notesModalId, setNotesModalId] = useState<number | null>(null);
   const [newNoteBody, setNewNoteBody] = useState("");
   const [savingNote, setSavingNote] = useState(false);
@@ -709,13 +722,27 @@ export default function DashboardClient({
                     <td style={{ fontVariantNumeric: "tabular-nums" }}>
                       {checkingIds.has(o.id) ? (
                         <span className="spinner" style={{ display: "inline-block", width: 16, height: 16, border: "2px solid var(--border)", borderTopColor: "var(--primary)", borderRadius: "50%", animation: "spin 0.6s linear infinite" }} />
-                      ) : (() => {
-                        const raw = dropResults[o.id] !== undefined ? dropResults[o.id] : o.dropRate;
-                        if (raw && typeof raw === "object" && "error" in raw) return <span style={{ color: "var(--danger, #ef4444)", fontWeight: 600, cursor: "help" }} title={raw.error}>Error</span>;
-                        if (raw == null) return "—";
-                        if (raw <= 0) return <span style={{ color: "var(--success)", fontWeight: 600 }} title={o.dropCheckedAt ? `Checked: ${fmt(o.dropCheckedAt)}` : ""}>No Drop</span>;
-                        return <span style={{ color: dropColor(raw), fontWeight: 600 }} title={o.dropCheckedAt ? `Checked: ${fmt(o.dropCheckedAt)}` : ""}>%{raw.toFixed(1)}</span>;
-                      })()}
+                      ) : (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+                          {(() => {
+                            const raw = dropResults[o.id] !== undefined ? dropResults[o.id] : o.dropRate;
+                            if (raw && typeof raw === "object" && "error" in raw) {
+                              const err = raw.error;
+                              const label = err.includes("409") ? "Private" : err.includes("404") ? "404" : "Error";
+                              const color = label === "Private" ? "var(--warning)" : "var(--danger, #ef4444)";
+                              return <span style={{ color, fontWeight: 600, cursor: "help" }} title={err}>{label}</span>;
+                            }
+                            if (raw == null) return <span>—</span>;
+                            if (raw <= 0) return <span style={{ color: "var(--success)", fontWeight: 600 }} title={o.dropCheckedAt ? `Checked: ${fmt(o.dropCheckedAt)}` : ""}>No Drop</span>;
+                            return <span style={{ color: dropColor(raw), fontWeight: 600 }} title={o.dropCheckedAt ? `Checked: ${fmt(o.dropCheckedAt)}` : ""}>%{raw.toFixed(1)}</span>;
+                          })()}
+                          {o.currentCount != null && o.quantity != null && (
+                            <span style={{ fontSize: 10, color: "var(--text-muted)" }} title="Current count / Quantity">
+                              {o.currentCount.toLocaleString("en-US")} / {o.quantity.toLocaleString("en-US")}
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </td>
                     <td><StatusBadge status={o.status} /></td>
                     <td style={{ fontVariantNumeric: "tabular-nums" }}>
@@ -746,8 +773,14 @@ export default function DashboardClient({
                             ? (o.refillNoIncrease ? "No increase" : "Refilled")
                             : "Tracking";
                           const tone = done && o.refillNoIncrease ? "badge-danger" : done ? "badge-success" : "badge-info";
+                          const isNoIncrease = done && o.refillNoIncrease;
                           return (
-                            <span className={`badge ${tone}`} title={o.refillRequestedAt ? `Requested: ${fmt(o.refillRequestedAt)}` : ""}>
+                            <span
+                              className={`badge ${tone}`}
+                              onDoubleClick={isNoIncrease ? () => markRefilled(o.id) : undefined}
+                              title={isNoIncrease ? "Double-click: mark as Refilled" : (o.refillRequestedAt ? `Requested: ${fmt(o.refillRequestedAt)}` : "")}
+                              style={isNoIncrease ? { cursor: "pointer" } : undefined}
+                            >
                               <Check size={11} /> {label}
                             </span>
                           );

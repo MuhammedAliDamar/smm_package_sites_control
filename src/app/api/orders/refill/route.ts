@@ -75,3 +75,21 @@ export async function POST(req: NextRequest) {
     slackSent: slackOk,
   });
 }
+
+// Manuel olarak "refilled" işaretle (No increase -> Refilled).
+export async function PATCH(req: NextRequest) {
+  const body = await req.json().catch(() => ({}));
+  const id = Number(body.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    return NextResponse.json({ error: "id required" }, { status: 400 });
+  }
+  const order = await prisma.order.findUnique({ where: { id }, select: { id: true } });
+  if (!order) {
+    return NextResponse.json({ error: "order not found" }, { status: 404 });
+  }
+  await prisma.order.update({
+    where: { id },
+    data: { refillNoIncrease: false, refillCheckedAt: new Date() },
+  });
+  return NextResponse.json({ ok: true, id });
+}
