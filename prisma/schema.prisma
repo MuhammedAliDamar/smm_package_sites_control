@@ -73,6 +73,7 @@ model Order {
   refillBaselineCount Int?
   refillCheckedAt     DateTime?
   refillNoIncrease    Boolean?
+  refillSlackTs       String?
   note                String?
   lastNoteAt          DateTime?
   status              String
