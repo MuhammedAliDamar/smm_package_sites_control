@@ -46,11 +46,11 @@ export function middleware(req: NextRequest) {
   }
 
   if (isPublicPage || isPublicApi) {
-    if (pathname === "/login" && hasCookie) {
-      const url = req.nextUrl.clone();
-      url.pathname = "/dashboard";
-      return NextResponse.redirect(url);
-    }
+    // NOT: Eskiden burada cookie varsa /login → /dashboard yönlendirmesi vardı.
+    // Middleware (edge) DB'ye bakamadığı için oturumun geçerli olup olmadığını
+    // bilemez; geçersiz-ama-mevcut bir cookie sonsuz redirect döngüsüne yol
+    // açıyordu (dashboard geçersiz oturumu /login'e atıyor, burası geri atıyordu).
+    // "Zaten girişli kullanıcıyı dashboard'a al" işini login sayfası devralır.
     return NextResponse.next();
   }
 

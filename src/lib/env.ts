@@ -12,4 +12,9 @@ export const env = {
   SYNC_INTERVAL_MINUTES: Number(process.env.SYNC_INTERVAL_MINUTES ?? 10),
   COUNTER_API_BASE: process.env.COUNTER_API_BASE ?? "https://check.globaprovider.com",
   COUNTER_API_KEY: process.env.COUNTER_API_KEY ?? "",
+  SLACK_WEBHOOK_URL: process.env.SLACK_WEBHOOK_URL ?? "",
+  // Slack bildirimlerinin başına eklenecek etiket. Gerçek ping için Slack
+  // member ID formatı kullanılmalı: "<@U0XXXXXXX>". Düz metin (ör. "@Oğuz
+  // Demirbay") sadece görünür, bildirim atmaz.
+  SLACK_MENTION: process.env.SLACK_MENTION ?? "@Oğuz Demirbay",
 };

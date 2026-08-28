@@ -8,7 +8,7 @@ const PAGE_SIZE = 50;
 
 const SORTABLE_FIELDS = new Set([
   "id", "username", "serviceName", "quantity", "startCount", "remains",
-  "dropRate", "status", "chargeValue", "createdAt",
+  "dropRate", "status", "chargeValue", "createdAt", "lastNoteAt",
 ]);
 
 function parseDate(s?: string): Date | undefined {
@@ -26,6 +26,8 @@ export default async function DashboardPage({
     q?: string;
     from?: string;
     to?: string;
+    refill?: string;
+    type?: string;
     page?: string;
     sort?: string;
     dir?: string;
@@ -41,7 +43,11 @@ export default async function DashboardPage({
     : {};
 
   const ordersWhere: Prisma.OrderWhereInput = { ...userScope };
-  if (sp.status) ordersWhere.status = sp.status;
+  if (sp.type) ordersWhere.creationType = sp.type;
+  if (sp.status) {
+    const statuses = sp.status.split(",").map((s) => s.trim()).filter(Boolean);
+    ordersWhere.status = statuses.length > 1 ? { in: statuses } : statuses[0];
+  }
 
   const from = parseDate(sp.from);
   const to = parseDate(sp.to);
@@ -53,6 +59,18 @@ export default async function DashboardPage({
       toEnd.setHours(23, 59, 59, 999);
       ordersWhere.createdAt.lte = toEnd;
     }
+  }
+
+  if (sp.refill === "tracking") {
+    ordersWhere.refillRequestedAt = { not: null };
+    ordersWhere.refillCheckedAt = null;
+  } else if (sp.refill === "noincrease") {
+    ordersWhere.refillNoIncrease = true;
+  } else if (sp.refill === "refilled") {
+    ordersWhere.refillCheckedAt = { not: null };
+    ordersWhere.refillNoIncrease = false;
+  } else if (sp.refill === "any") {
+    ordersWhere.refillRequestedAt = { not: null };
   }
 
   const q = (sp.q ?? "").trim();
@@ -84,6 +102,7 @@ export default async function DashboardPage({
     filteredTotal,
     orders,
     statusOptions,
+    typeOptions,
   ] = await Promise.all([
     prisma.order.count({ where: userScope }),
     prisma.order.groupBy({
@@ -111,11 +130,16 @@ export default async function DashboardPage({
     prisma.order.count({ where: ordersWhere }),
     prisma.order.findMany({
       where: ordersWhere,
-      orderBy: { [sortField]: sortDir },
+      orderBy:
+        sortField === "lastNoteAt"
+          ? { lastNoteAt: { sort: sortDir, nulls: "last" } }
+          : { [sortField]: sortDir },
       skip: (page - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
+      include: { notes: { orderBy: { createdAt: "desc" } } },
     }),
     prisma.order.groupBy({ by: ["status"], where: userScope }),
+    prisma.order.groupBy({ by: ["creationType"], where: userScope }),
   ]);
 
   const byStatus = Object.fromEntries(
@@ -178,6 +202,8 @@ export default async function DashboardPage({
         list: orders.map((o) => ({
           id: o.id,
           username: o.username,
+          creationType: o.creationType,
+          serviceId: o.serviceId,
           serviceName: o.serviceName,
           link: o.link,
           quantity: o.quantity,
@@ -191,11 +217,20 @@ export default async function DashboardPage({
           chargeCurrency: o.chargeCurrency,
           provider: o.provider,
           createdAt: o.createdAt.toISOString(),
+          refillRequestedAt: o.refillRequestedAt?.toISOString() ?? null,
+          refillCheckedAt: o.refillCheckedAt?.toISOString() ?? null,
+          refillNoIncrease: o.refillNoIncrease,
+          notes: o.notes.map((n) => ({
+            id: n.id,
+            body: n.body,
+            createdAt: n.createdAt.toISOString(),
+          })),
         })),
         total: filteredTotal,
         page,
         pageSize: PAGE_SIZE,
         statusOptions: statusOptions.map((s) => s.status),
+        typeOptions: typeOptions.map((t) => t.creationType).filter((v): v is string => Boolean(v)),
         usernameOptions: trackedRows.map((r) => r.username),
         filters: {
           user: userFilter,
@@ -203,6 +238,8 @@ export default async function DashboardPage({
           q: sp.q ?? "",
           from: sp.from ?? "",
           to: sp.to ?? "",
+          refill: sp.refill ?? "",
+          type: sp.type ?? "",
         },
         sort: { field: sortField, dir: sortDir },
       }}

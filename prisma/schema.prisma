@@ -69,6 +69,12 @@ model Order {
   currentCount        Int?
   dropRate            Decimal? @db.Decimal(10, 2)
   dropCheckedAt       DateTime?
+  refillRequestedAt   DateTime?
+  refillBaselineCount Int?
+  refillCheckedAt     DateTime?
+  refillNoIncrease    Boolean?
+  note                String?
+  lastNoteAt          DateTime?
   status              String
   chargeValue         Decimal? @db.Decimal(20, 10)
   chargeCurrency      String?
@@ -80,11 +86,22 @@ model Order {
   raw                 Json
 
   trackedUser TrackedUsername? @relation(fields: [username], references: [username], onDelete: SetNull)
+  notes       OrderNote[]
 
   @@index([username])
   @@index([status])
   @@index([createdAt])
   @@index([serviceId])
+}
+
+model OrderNote {
+  id        Int      @id @default(autoincrement())
+  orderId   Int
+  body      String
+  createdAt DateTime @default(now())
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
 }
 
 model SyncRun {

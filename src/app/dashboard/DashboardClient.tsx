@@ -6,7 +6,7 @@ import {
   ListOrdered, CheckCircle2, Clock, XCircle, DollarSign,
   Users as UsersIcon, RefreshCw, AlertTriangle, Activity,
   Plus, Trash2, Power, Search, X, Globe, ArrowUp, ArrowDown,
-  TrendingDown,
+  TrendingDown, RotateCcw, Check, ExternalLink, UserPlus, StickyNote, ChevronDown,
 } from "lucide-react";
 
 type Stats = {
@@ -44,20 +44,23 @@ type SyncRow = {
 };
 
 type OrderRow = {
-  id: number; username: string; serviceName: string | null;
+  id: number; username: string; creationType: string | null; serviceId: number | null; serviceName: string | null;
   link: string | null; quantity: number | null;
   startCount: number | null; remains: number | null;
   currentCount: number | null; dropRate: number | null;
   dropCheckedAt: string | null;
   status: string; chargeValue: number | null; chargeCurrency: string | null;
   provider: string | null; createdAt: string;
+  refillRequestedAt: string | null; refillCheckedAt: string | null;
+  refillNoIncrease: boolean | null;
+  notes: { id: number; body: string; createdAt: string }[];
 };
 
-type Filters = { user: string; status: string; q: string; from: string; to: string };
+type Filters = { user: string; status: string; q: string; from: string; to: string; refill: string; type: string };
 type Sort = { field: string; dir: "asc" | "desc" };
 type OrdersBlock = {
   list: OrderRow[]; total: number; page: number; pageSize: number;
-  statusOptions: string[]; usernameOptions: string[];
+  statusOptions: string[]; typeOptions: string[]; usernameOptions: string[];
   filters: Filters; sort: Sort;
 };
 
@@ -91,11 +94,12 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 function StatCard({
-  label, value, hint, icon: Icon, tone = "default",
+  label, value, hint, icon: Icon, tone = "default", onClick, active,
 }: {
   label: string; value: string | number; hint?: string;
   icon: React.ComponentType<{ size?: number }>;
   tone?: "default" | "success" | "warning" | "danger" | "info";
+  onClick?: () => void; active?: boolean;
 }) {
   const colorMap = {
     default: "var(--accent)", success: "var(--success)",
@@ -103,7 +107,16 @@ function StatCard({
   };
   const c = colorMap[tone];
   return (
-    <div className="stat-card">
+    <div
+      className="stat-card"
+      onClick={onClick}
+      style={onClick ? {
+        cursor: "pointer",
+        borderColor: active ? c : undefined,
+        boxShadow: active ? `inset 0 0 0 1px ${c}` : undefined,
+      } : undefined}
+      title={onClick ? "Click to filter" : undefined}
+    >
       <div className="stat-icon" style={{
         background: `color-mix(in srgb, ${c} 14%, transparent)`,
         color: c,
@@ -128,7 +141,7 @@ function dropColor(rate: number): string {
 const SORT_LABELS: Record<string, string> = {
   id: "ID", username: "User", serviceName: "Service",
   quantity: "Qty", startCount: "Start", remains: "Remains", dropRate: "Drop",
-  status: "Status", chargeValue: "Charge", createdAt: "Date",
+  status: "Status", chargeValue: "Charge", createdAt: "Date", lastNoteAt: "Note",
 };
 
 export default function DashboardClient({
@@ -145,6 +158,7 @@ export default function DashboardClient({
   const [syncing, setSyncing] = useState(false);
   const [checking, setChecking] = useState(false);
   const [searchInput, setSearchInput] = useState(orders.filters.q);
+  const [showUserModal, setShowUserModal] = useState(false);
   const didAutoSync = useRef(false);
 
   useEffect(() => {
@@ -171,6 +185,8 @@ export default function DashboardClient({
       ...(orders.filters.q ? { q: orders.filters.q } : {}),
       ...(orders.filters.from ? { from: orders.filters.from } : {}),
       ...(orders.filters.to ? { to: orders.filters.to } : {}),
+      ...(orders.filters.refill ? { refill: orders.filters.refill } : {}),
+      ...(orders.filters.type ? { type: orders.filters.type } : {}),
       ...(orders.sort.field !== "createdAt" || orders.sort.dir !== "desc"
         ? { sort: orders.sort.field, dir: orders.sort.dir } : {}),
     };
@@ -185,6 +201,9 @@ export default function DashboardClient({
 
   const setFilter = (key: keyof Filters, value: string) =>
     pushFilters({ [key]: value } as Partial<Filters>);
+
+  const toggleStatus = (value: string) =>
+    setFilter("status", orders.filters.status === value ? "" : value);
 
   function clearAll() {
     setSearchInput("");
@@ -251,6 +270,54 @@ export default function DashboardClient({
     }
   }
 
+  const [refillState, setRefillState] = useState<Record<number, { requested: boolean; loading: boolean }>>({});
+
+  async function requestRefill(o: OrderRow) {
+    if (o.refillRequestedAt || refillState[o.id]?.requested) return;
+    setRefillState((p) => ({ ...p, [o.id]: { requested: false, loading: true } }));
+    try {
+      const res = await fetch("/api/orders/refill", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: o.id }),
+      });
+      if (res.ok || res.status === 409) {
+        setRefillState((p) => ({ ...p, [o.id]: { requested: true, loading: false } }));
+        startTransition(() => router.refresh());
+      } else {
+        setRefillState((p) => ({ ...p, [o.id]: { requested: false, loading: false } }));
+      }
+    } catch {
+      setRefillState((p) => ({ ...p, [o.id]: { requested: false, loading: false } }));
+    }
+  }
+
+  const [notesModalId, setNotesModalId] = useState<number | null>(null);
+  const [newNoteBody, setNewNoteBody] = useState("");
+  const [savingNote, setSavingNote] = useState(false);
+  const [notifyChannel, setNotifyChannel] = useState(false);
+  const [showSyncs, setShowSyncs] = useState(false);
+  const notesOrder = notesModalId != null ? orders.list.find((o) => o.id === notesModalId) ?? null : null;
+
+  async function addNote(orderId: number) {
+    const body = newNoteBody.trim();
+    if (!body) return;
+    setSavingNote(true);
+    try {
+      const res = await fetch(`/api/orders/${orderId}/note`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body, notify: notifyChannel }),
+      });
+      if (res.ok) {
+        setNewNoteBody("");
+        startTransition(() => router.refresh());
+      }
+    } finally {
+      setSavingNote(false);
+    }
+  }
+
   async function addUser(e: React.FormEvent) {
     e.preventDefault();
     setAddError(null);
@@ -289,7 +356,7 @@ export default function DashboardClient({
 
   const totalPages = Math.max(1, Math.ceil(orders.total / orders.pageSize));
   const f = orders.filters;
-  const hasFilter = !!(f.user || f.status || f.q || f.from || f.to);
+  const hasFilter = !!(f.user || f.status || f.q || f.refill || f.type);
   const scopeLabel = stats.scopeUser ?? "All Users";
 
   function FilterPill({ label, value, onClear }: { label: string; value: string; onClear: () => void }) {
@@ -336,18 +403,28 @@ export default function DashboardClient({
             Auto-sync every 10 minutes · last sync: {fmt(stats.lastSync?.finishedAt ?? stats.lastSync?.startedAt)}
           </p>
         </div>
-        <button className="btn btn-primary" onClick={syncNow} disabled={syncing}>
-          <RefreshCw size={14} style={syncing ? { animation: "spin 1s linear infinite" } : undefined} />
-          {syncing ? "Syncing..." : "Sync Now"}
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <button className="btn" onClick={() => setShowUserModal(true)}>
+            <UserPlus size={14} /> Add User
+          </button>
+          <button className="btn btn-primary" onClick={syncNow} disabled={syncing}>
+            <RefreshCw size={14} style={syncing ? { animation: "spin 1s linear infinite" } : undefined} />
+            {syncing ? "Syncing..." : "Sync Now"}
+          </button>
+        </div>
       </div>
 
       <div className="stat-grid">
-        <StatCard label={`Total Orders · ${scopeLabel}`} value={stats.totalOrders.toLocaleString("en-US")} hint={`Last 24h: ${stats.last24h.toLocaleString("en-US")}`} icon={ListOrdered} />
-        <StatCard label="Completed" value={stats.completed.toLocaleString("en-US")} tone="success" icon={CheckCircle2} />
-        <StatCard label="In Progress" value={stats.inProgress.toLocaleString("en-US")} tone="info" icon={Clock} hint={`Pending: ${stats.pending}`} />
-        <StatCard label="Partial" value={stats.partial.toLocaleString("en-US")} tone="warning" icon={Activity} />
-        <StatCard label="Canceled" value={stats.canceled.toLocaleString("en-US")} tone="danger" icon={XCircle} />
+        <StatCard label={`Total Orders · ${scopeLabel}`} value={stats.totalOrders.toLocaleString("en-US")} hint={`Last 24h: ${stats.last24h.toLocaleString("en-US")}`} icon={ListOrdered}
+          onClick={() => setFilter("status", "")} active={!f.status} />
+        <StatCard label="Completed" value={stats.completed.toLocaleString("en-US")} tone="success" icon={CheckCircle2}
+          onClick={() => toggleStatus("completed")} active={f.status === "completed"} />
+        <StatCard label="In Progress" value={stats.inProgress.toLocaleString("en-US")} tone="info" icon={Clock} hint={`Pending: ${stats.pending}`}
+          onClick={() => toggleStatus("in_progress,processing")} active={f.status === "in_progress,processing"} />
+        <StatCard label="Partial" value={stats.partial.toLocaleString("en-US")} tone="warning" icon={Activity}
+          onClick={() => toggleStatus("partial")} active={f.status === "partial"} />
+        <StatCard label="Canceled" value={stats.canceled.toLocaleString("en-US")} tone="danger" icon={XCircle}
+          onClick={() => toggleStatus("canceled")} active={f.status === "canceled"} />
         <StatCard label="Avg Drop Rate" value={`%${stats.avgDropRate.toFixed(1)}`} tone={stats.avgDropRate > 15 ? "danger" : stats.avgDropRate > 5 ? "warning" : "success"} icon={TrendingDown} />
         <StatCard label="Total Charge" value={`$${stats.chargeSum.toFixed(2)}`} icon={DollarSign} />
         <StatCard label="Tracked Users" value={stats.trackedActive} hint={`Total ${stats.trackedTotal}`} icon={UsersIcon} />
@@ -360,11 +437,15 @@ export default function DashboardClient({
         />
       </div>
 
-      <div className="split-2">
-        <div className="card" style={{ padding: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+      {showUserModal && (
+        <div onClick={() => setShowUserModal(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "grid", placeItems: "center", zIndex: 50, padding: 16 }}>
+        <div className="card" onClick={(e) => e.stopPropagation()} style={{ padding: 0, overflow: "hidden", display: "flex", flexDirection: "column", width: "100%", maxWidth: 460, maxHeight: "85vh" }}>
           <div className="section-head">
             <h2 className="section-title">Users</h2>
-            <span className="badge">{tracked.length}</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span className="badge">{tracked.length}</span>
+              <button className="btn btn-icon btn-sm" onClick={() => setShowUserModal(false)} title="Close"><X size={14} /></button>
+            </div>
           </div>
 
           <form onSubmit={addUser} style={{ padding: "14px 16px", borderBottom: "1px solid var(--border)", display: "grid", gap: 8 }}>
@@ -454,7 +535,10 @@ export default function DashboardClient({
             })}
           </div>
         </div>
+        </div>
+      )}
 
+      <div>
         <div className="card" style={{ padding: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
           <div className="section-head" style={{ flexDirection: "column", alignItems: "stretch" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
@@ -484,6 +568,15 @@ export default function DashboardClient({
                 </form>
               </div>
               <select
+                value={f.user}
+                onChange={(e) => setFilter("user", e.target.value)}
+                className="input input-sm"
+                style={{ width: "auto", minWidth: 150 }}
+              >
+                <option value="">All users</option>
+                {orders.usernameOptions.map((u) => (<option key={u} value={u}>{u}</option>))}
+              </select>
+              <select
                 value={f.status}
                 onChange={(e) => setFilter("status", e.target.value)}
                 className="input input-sm"
@@ -492,22 +585,27 @@ export default function DashboardClient({
                 <option value="">All statuses</option>
                 {orders.statusOptions.map((s) => (<option key={s} value={s}>{s}</option>))}
               </select>
-              <input
-                type="date"
-                value={f.from}
-                onChange={(e) => setFilter("from", e.target.value)}
+              <select
+                value={f.refill}
+                onChange={(e) => setFilter("refill", e.target.value)}
                 className="input input-sm"
-                style={{ width: "auto" }}
-                title="From"
-              />
-              <input
-                type="date"
-                value={f.to}
-                onChange={(e) => setFilter("to", e.target.value)}
+                style={{ width: "auto", minWidth: 130 }}
+              >
+                <option value="">All refills</option>
+                <option value="any">Any refill</option>
+                <option value="tracking">Tracking</option>
+                <option value="noincrease">No increase</option>
+                <option value="refilled">Refilled</option>
+              </select>
+              <select
+                value={f.type}
+                onChange={(e) => setFilter("type", e.target.value)}
                 className="input input-sm"
-                style={{ width: "auto" }}
-                title="To"
-              />
+                style={{ width: "auto", minWidth: 130 }}
+              >
+                <option value="">All types</option>
+                {orders.typeOptions.map((t) => (<option key={t} value={t}>{t}</option>))}
+              </select>
               {hasFilter && (
                 <button className="btn btn-sm" onClick={clearAll}>
                   <X size={13} /> Clear
@@ -515,12 +613,12 @@ export default function DashboardClient({
               )}
             </div>
 
-            {(f.status || f.q || f.from || f.to) && (
+            {(f.status || f.q || f.refill || f.type) && (
               <div className="filter-pills">
                 {f.status && <FilterPill label="Status" value={f.status} onClear={() => setFilter("status", "")} />}
+                {f.type && <FilterPill label="Type" value={f.type} onClear={() => setFilter("type", "")} />}
+                {f.refill && <FilterPill label="Refill" value={f.refill} onClear={() => setFilter("refill", "")} />}
                 {f.q && <FilterPill label="Search" value={f.q} onClear={() => { setSearchInput(""); setFilter("q", ""); }} />}
-                {f.from && <FilterPill label="From" value={f.from} onClear={() => setFilter("from", "")} />}
-                {f.to && <FilterPill label="To" value={f.to} onClear={() => setFilter("to", "")} />}
               </div>
             )}
           </div>
@@ -539,11 +637,13 @@ export default function DashboardClient({
                   <SortHeader field="status">Status</SortHeader>
                   <SortHeader field="chargeValue">Charge</SortHeader>
                   <SortHeader field="createdAt">Date</SortHeader>
+                  <SortHeader field="lastNoteAt">Note</SortHeader>
+                  <th>Refill</th>
                 </tr>
               </thead>
               <tbody>
                 {orders.list.length === 0 && (
-                  <tr><td colSpan={10} style={{ textAlign: "center", padding: 32, color: "var(--text-muted)" }}>
+                  <tr><td colSpan={12} style={{ textAlign: "center", padding: 32, color: "var(--text-muted)" }}>
                     No orders found
                   </td></tr>
                 )}
@@ -551,16 +651,57 @@ export default function DashboardClient({
                   <tr key={o.id}>
                     <td style={{ fontFamily: "ui-monospace, SFMono-Regular, monospace", fontSize: 12, color: "var(--text-muted)" }}>{o.id}</td>
                     <td>
-                      <button className="user-link" onClick={() => setFilter("user", o.username)}>
-                        {o.username}
-                      </button>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <button className="user-link" onClick={() => setFilter("user", o.username)} style={{ textAlign: "left" }}>
+                          {o.username}
+                        </button>
+                        {o.creationType && (
+                          <button
+                            onClick={() => setFilter("type", o.creationType ?? "")}
+                            className="badge"
+                            style={{ fontSize: 10, padding: "1px 6px", cursor: "pointer", border: "none", flexShrink: 0 }}
+                            title={`Filter: ${o.creationType}`}
+                          >
+                            {o.creationType}
+                          </button>
+                        )}
+                      </div>
                     </td>
-                    <td style={{ maxWidth: 320, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {o.link ? (
-                        <a href={o.link} target="_blank" rel="noreferrer" title={o.serviceName ?? ""} style={{ color: "var(--text)", textDecoration: "none" }}>
-                          {o.serviceName ?? "—"}
-                        </a>
-                      ) : (o.serviceName ?? "—")}
+                    <td style={{ maxWidth: 340 }}>
+                      {o.link && (
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <a
+                            href={o.link}
+                            target="_blank"
+                            rel="noreferrer"
+                            title={o.link}
+                            style={{ fontSize: 12, color: "var(--accent)", textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}
+                          >
+                            {o.link}
+                          </a>
+                          <a
+                            href={o.link}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="btn btn-icon btn-sm"
+                            title="Open in new tab"
+                            style={{ flexShrink: 0 }}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <ExternalLink size={12} />
+                          </a>
+                        </div>
+                      )}
+                      <div
+                        style={{ fontSize: 11, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                        title={`${o.serviceId != null ? `${o.serviceId} · ` : ""}${o.serviceName ?? ""}`}
+                      >
+                        {o.serviceId != null && (
+                          <span style={{ color: "var(--text)", fontWeight: 600 }}>{o.serviceId}</span>
+                        )}
+                        {o.serviceId != null ? " · " : ""}
+                        {o.serviceName ?? "—"}
+                      </div>
                     </td>
                     <td>{o.quantity?.toLocaleString("en-US") ?? "—"}</td>
                     <td>{o.startCount?.toLocaleString("en-US") ?? "—"}</td>
@@ -581,6 +722,49 @@ export default function DashboardClient({
                       {o.chargeValue != null ? `$${o.chargeValue.toFixed(4)}` : "—"}
                     </td>
                     <td style={{ color: "var(--text-muted)", fontSize: 12 }}>{fmt(o.createdAt)}</td>
+                    <td>
+                      <button
+                        className="btn btn-icon btn-sm"
+                        onClick={() => { setNotesModalId(o.id); setNewNoteBody(""); }}
+                        title={o.notes.length ? `${o.notes.length} note(s)` : "Add note"}
+                        style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
+                      >
+                        <StickyNote size={13} style={o.notes.length ? { color: "var(--accent)" } : undefined} />
+                        {o.notes.length > 0 && <span style={{ fontSize: 11 }}>{o.notes.length}</span>}
+                      </button>
+                    </td>
+                    <td>
+                      {(() => {
+                        const completed = o.status.toLowerCase().includes("complet");
+                        const localReq = refillState[o.id]?.requested;
+                        const loading = refillState[o.id]?.loading;
+                        const requested = Boolean(o.refillRequestedAt) || localReq;
+                        if (!completed) return <span style={{ color: "var(--text-muted)" }}>—</span>;
+                        if (requested) {
+                          const done = Boolean(o.refillCheckedAt);
+                          const label = done
+                            ? (o.refillNoIncrease ? "No increase" : "Refilled")
+                            : "Tracking";
+                          const tone = done && o.refillNoIncrease ? "badge-danger" : done ? "badge-success" : "badge-info";
+                          return (
+                            <span className={`badge ${tone}`} title={o.refillRequestedAt ? `Requested: ${fmt(o.refillRequestedAt)}` : ""}>
+                              <Check size={11} /> {label}
+                            </span>
+                          );
+                        }
+                        return (
+                          <button
+                            className="btn btn-sm"
+                            onClick={() => requestRefill(o)}
+                            disabled={loading}
+                            title="Request refill"
+                          >
+                            <RotateCcw size={13} style={loading ? { animation: "spin 1s linear infinite" } : undefined} />
+                            {loading ? "..." : "Refill"}
+                          </button>
+                        );
+                      })()}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -611,10 +795,16 @@ export default function DashboardClient({
         </div>
       </div>
 
-      <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-        <div className="section-head">
+      <div className="card" style={{ padding: 0, overflow: "hidden", marginTop: 16 }}>
+        <button
+          onClick={() => setShowSyncs((v) => !v)}
+          className="section-head"
+          style={{ width: "100%", background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between" }}
+        >
           <h2 className="section-title">Recent Syncs</h2>
-        </div>
+          <ChevronDown size={16} style={{ transform: showSyncs ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
+        </button>
+        {showSyncs && (
         <div style={{ overflow: "auto" }}>
           <table>
             <thead>
@@ -654,7 +844,52 @@ export default function DashboardClient({
             </tbody>
           </table>
         </div>
+        )}
       </div>
+
+      {notesOrder && (
+        <div onClick={() => setNotesModalId(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "grid", placeItems: "center", zIndex: 50, padding: 16 }}>
+          <div className="card" onClick={(e) => e.stopPropagation()} style={{ padding: 0, overflow: "hidden", display: "flex", flexDirection: "column", width: "100%", maxWidth: 460, maxHeight: "85vh" }}>
+            <div className="section-head">
+              <h2 className="section-title">Notes · #{notesOrder.id}</h2>
+              <button className="btn btn-icon btn-sm" onClick={() => setNotesModalId(null)} title="Close"><X size={14} /></button>
+            </div>
+            <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--border)", display: "grid", gap: 8 }}>
+              <textarea
+                className="input input-sm"
+                placeholder="New note..."
+                value={newNoteBody}
+                onChange={(e) => setNewNoteBody(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) addNote(notesOrder.id); }}
+                rows={2}
+                style={{ resize: "vertical" }}
+              />
+              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--text-muted)", cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={notifyChannel}
+                  onChange={(e) => setNotifyChannel(e.target.checked)}
+                />
+                Notify Slack channel
+              </label>
+              <button className="btn btn-primary btn-sm" onClick={() => addNote(notesOrder.id)} disabled={savingNote || !newNoteBody.trim()}>
+                <Plus size={14} /> {savingNote ? "Adding..." : "Add Note"}
+              </button>
+            </div>
+            <div style={{ overflow: "auto", padding: "8px 0" }}>
+              {notesOrder.notes.length === 0 && (
+                <div style={{ padding: 24, textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>No notes yet.</div>
+              )}
+              {notesOrder.notes.map((n) => (
+                <div key={n.id} style={{ padding: "10px 16px", borderBottom: "1px solid var(--border)" }}>
+                  <div style={{ fontSize: 13, color: "var(--text)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{n.body}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>{fmt(n.createdAt)}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       <style>{`@keyframes spin { from{transform:rotate(0)} to{transform:rotate(360deg)} }`}</style>
     </>

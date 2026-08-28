@@ -7,6 +7,7 @@ const DROP_CHECK_HOURS = [8, 14, 22];
 async function main() {
   const { runSync } = await import("../src/lib/sync");
   const { runDropCheck } = await import("../src/lib/dropCheck");
+  const { runRefillCheck } = await import("../src/lib/refillCheck");
   const minutes = Number(process.env.SYNC_INTERVAL_MINUTES ?? 10);
   const intervalMs = minutes * 60 * 1000;
   console.log(`Local cron çalışıyor: her ${minutes} dakikada bir senkron.`);
@@ -43,9 +44,27 @@ async function main() {
     }
   }
 
+  async function refillTick() {
+    const t0 = Date.now();
+    try {
+      const r = await runRefillCheck();
+      const ms = Date.now() - t0;
+      if (r.checked > 0) {
+        console.log(
+          `[${new Date().toISOString()}] REFILL CHECK: checked=${r.checked} noIncrease=${r.noIncrease} increased=${r.increased} ${ms}ms`,
+        );
+      }
+    } catch (err) {
+      console.error(`[${new Date().toISOString()}] refill check HATA:`, err);
+    }
+  }
+
   await tick();
   setInterval(tick, intervalMs);
   setInterval(dropTick, 60_000);
+  // Refill'lerin 24 saatlik kontrolü: saatte bir tarar, süresi dolanı işler.
+  setInterval(refillTick, 60 * 60_000);
+  await refillTick();
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });
