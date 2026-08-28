@@ -728,9 +728,14 @@ export default function DashboardClient({
                             const raw = dropResults[o.id] !== undefined ? dropResults[o.id] : o.dropRate;
                             if (raw && typeof raw === "object" && "error" in raw) {
                               const err = raw.error;
-                              const label = err.includes("409") ? "Private" : err.includes("404") ? "404" : "Error";
-                              const color = label === "Private" ? "var(--warning)" : "var(--danger, #ef4444)";
-                              return <span style={{ color, fontWeight: 600, cursor: "help" }} title={err}>{label}</span>;
+                              const m = err.match(/counter_http_(\d+)\s+\S+\s+(.*)/);
+                              const reason = m ? `${m[1]} ${m[2]}` : err;
+                              return (
+                                <span style={{ display: "inline-flex", flexDirection: "column", gap: 1 }}>
+                                  <span style={{ color: "var(--danger, #ef4444)", fontWeight: 600, cursor: "help" }} title={err}>Error</span>
+                                  <span style={{ fontSize: 10, color: "var(--text-muted)", maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={err}>{reason}</span>
+                                </span>
+                              );
                             }
                             if (raw == null) return <span>—</span>;
                             if (raw <= 0) return <span style={{ color: "var(--success)", fontWeight: 600 }} title={o.dropCheckedAt ? `Checked: ${fmt(o.dropCheckedAt)}` : ""}>No Drop</span>;
