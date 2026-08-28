@@ -231,7 +231,7 @@ export default function DashboardClient({
 
   async function checkDrop() {
     const eligibleIds = orders.list
-      .filter((o) => o.link && o.quantity && o.startCount)
+      .filter((o) => o.link && o.quantity && o.startCount && o.status.toLowerCase().includes("complet"))
       .map((o) => o.id);
     if (eligibleIds.length === 0) return;
     setChecking(true);
@@ -300,6 +300,22 @@ export default function DashboardClient({
         body: JSON.stringify({ id: orderId }),
       });
       if (res.ok) startTransition(() => router.refresh());
+    } catch {
+      /* sessiz */
+    }
+  }
+
+  async function removeTracking(orderId: number) {
+    try {
+      const res = await fetch("/api/orders/refill", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: orderId, untrack: true }),
+      });
+      if (res.ok) {
+        setRefillState((p) => { const n = { ...p }; delete n[orderId]; return n; });
+        startTransition(() => router.refresh());
+      }
     } catch {
       /* sessiz */
     }
@@ -780,13 +796,22 @@ export default function DashboardClient({
                           const tone = done && o.refillNoIncrease ? "badge-danger" : done ? "badge-success" : "badge-info";
                           const isNoIncrease = done && o.refillNoIncrease;
                           return (
-                            <span
-                              className={`badge ${tone}`}
-                              onDoubleClick={isNoIncrease ? () => markRefilled(o.id) : undefined}
-                              title={isNoIncrease ? "Double-click: mark as Refilled" : (o.refillRequestedAt ? `Requested: ${fmt(o.refillRequestedAt)}` : "")}
-                              style={isNoIncrease ? { cursor: "pointer" } : undefined}
-                            >
-                              <Check size={11} /> {label}
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                              <span
+                                className={`badge ${tone}`}
+                                onDoubleClick={isNoIncrease ? () => markRefilled(o.id) : undefined}
+                                title={isNoIncrease ? "Double-click: mark as Refilled" : (o.refillRequestedAt ? `Requested: ${fmt(o.refillRequestedAt)}` : "")}
+                                style={isNoIncrease ? { cursor: "pointer" } : undefined}
+                              >
+                                <Check size={11} /> {label}
+                              </span>
+                              <button
+                                className="btn btn-icon btn-sm"
+                                onClick={() => removeTracking(o.id)}
+                                title="Remove tracking"
+                              >
+                                <X size={12} />
+                              </button>
                             </span>
                           );
                         }

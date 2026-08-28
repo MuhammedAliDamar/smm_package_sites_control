@@ -13,7 +13,10 @@ export async function POST(req: NextRequest) {
   }
 
   const orders = await prisma.order.findMany({
-    where: { id: { in: ids } },
+    where: {
+      id: { in: ids },
+      status: { in: ["completed", "Completed", "complete", "Complete"] },
+    },
     select: {
       id: true,
       link: true,

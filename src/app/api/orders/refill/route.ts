@@ -76,7 +76,8 @@ export async function POST(req: NextRequest) {
   });
 }
 
-// Manuel olarak "refilled" işaretle (No increase -> Refilled).
+// PATCH { id }              -> "refilled" işaretle (No increase -> Refilled)
+// PATCH { id, untrack: true } -> refill takibini tamamen kaldır (alanları temizle)
 export async function PATCH(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   const id = Number(body.id);
@@ -86,6 +87,18 @@ export async function PATCH(req: NextRequest) {
   const order = await prisma.order.findUnique({ where: { id }, select: { id: true } });
   if (!order) {
     return NextResponse.json({ error: "order not found" }, { status: 404 });
+  }
+  if (body.untrack === true) {
+    await prisma.order.update({
+      where: { id },
+      data: {
+        refillRequestedAt: null,
+        refillBaselineCount: null,
+        refillCheckedAt: null,
+        refillNoIncrease: null,
+      },
+    });
+    return NextResponse.json({ ok: true, id, untracked: true });
   }
   await prisma.order.update({
     where: { id },
