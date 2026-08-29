@@ -178,6 +178,23 @@ export default function DashboardClient({
     return () => clearInterval(interval);
   }, [router, startTransition]);
 
+  // 24 saatlik refill kontrolü — dashboard açıkken tetiklenir (mount + her 15 dk).
+  // Süresi dolan (24h geçmiş, artış yok) refill'ler için 2. Slack mesajını yollar.
+  // Tarayıcıdan bağımsız tam otomasyon için sunucuda `npm run cron:local` veya
+  // gerçek cron ile /api/cron/refill-check çağrılmalı.
+  const didRefillCheck = useRef(false);
+  useEffect(() => {
+    if (didRefillCheck.current) return;
+    didRefillCheck.current = true;
+    const run = () =>
+      fetch("/api/cron/refill-check", { method: "POST" })
+        .then(() => startTransition(() => router.refresh()))
+        .catch(() => {});
+    run();
+    const t = setInterval(run, 15 * 60 * 1000);
+    return () => clearInterval(t);
+  }, [router, startTransition]);
+
   function pushFilters(next: Partial<Filters & { page: string; sort: string; dir: string }>) {
     const merged: Record<string, string> = {
       ...(orders.filters.user ? { user: orders.filters.user } : {}),
