@@ -90,15 +90,29 @@ function parseRows(html: string): UpdateRow[] {
   return rows;
 }
 
-/** Login olup /updates satırlarını döndürür. Hata olursa null. */
+/**
+ * Login olup /updates satırlarını döndürür. Geçici hatalara (timeout, login hiccup)
+ * karşı 3 deneme yapar. Hepsi başarısızsa null.
+ */
 export async function fetchUpdateRows(): Promise<UpdateRow[] | null> {
-  const jar = await login();
-  if (!jar) return null;
-  const res = await fetch(`${env.THOR_UPDATES_BASE}/updates`, {
-    headers: { "User-Agent": UA, Cookie: cookieHeader(jar) },
-    signal: AbortSignal.timeout(25_000),
-  });
-  if (!res.ok) return null;
-  const html = await res.text();
-  return parseRows(html);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const jar = await login();
+      if (jar) {
+        const res = await fetch(`${env.THOR_UPDATES_BASE}/updates`, {
+          headers: { "User-Agent": UA, Cookie: cookieHeader(jar) },
+          signal: AbortSignal.timeout(25_000),
+        });
+        if (res.ok) {
+          const rows = parseRows(await res.text());
+          // rows boşsa muhtemelen login sayfasına düştük (oturum yok) — tekrar dene
+          if (rows.length > 0) return rows;
+        }
+      }
+    } catch {
+      /* retry */
+    }
+    if (attempt < 2) await new Promise((r) => setTimeout(r, 1500));
+  }
+  return null;
 }

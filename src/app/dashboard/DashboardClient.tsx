@@ -7,7 +7,6 @@ import {
   Users as UsersIcon, RefreshCw, AlertTriangle, Activity,
   Plus, Trash2, Power, Search, X, Globe, ArrowUp, ArrowDown,
   TrendingDown, RotateCcw, Check, ExternalLink, UserPlus, StickyNote, ChevronDown,
-  Bell, Send,
 } from "lucide-react";
 
 type Stats = {
@@ -379,112 +378,6 @@ export default function DashboardClient({
     }
   }
 
-  // Slack bot bildirim modalı
-  const [showNotifyModal, setShowNotifyModal] = useState(false);
-  const [botToken, setBotToken] = useState("");
-  const [channelList, setChannelList] = useState<{ id: string; name: string; type?: string }[]>([]);
-  const [channelNames, setChannelNames] = useState<Record<string, string>>({});
-  const [selectedChannels, setSelectedChannels] = useState<Set<string>>(new Set());
-  const [channelSearch, setChannelSearch] = useState("");
-  const [loadingChannels, setLoadingChannels] = useState(false);
-  const [notifyMessage, setNotifyMessage] = useState("");
-  const [sendingNotify, setSendingNotify] = useState(false);
-  const [notifyStatus, setNotifyStatus] = useState<string | null>(null);
-  const [manualChatId, setManualChatId] = useState("");
-  const [manualChatName, setManualChatName] = useState("");
-
-  function addManualChat() {
-    const id = manualChatId.trim();
-    if (!id) return;
-    const name = manualChatName.trim() || id;
-    setChannelList((prev) => (prev.some((c) => c.id === id) ? prev : [...prev, { id, name, type: "manual" }]));
-    setChannelNames((prev) => ({ ...prev, [id]: name }));
-    setSelectedChannels((prev) => new Set(prev).add(id));
-    setManualChatId("");
-    setManualChatName("");
-  }
-
-  async function openNotifyModal() {
-    setShowNotifyModal(true);
-    setNotifyStatus(null);
-    try {
-      const res = await fetch("/api/slack/config");
-      if (res.ok) {
-        const cfg = await res.json();
-        setBotToken(cfg.token ?? "");
-        const saved = (cfg.chats ?? []) as { id: string; name: string }[];
-        setChannelList(saved.map((c) => ({ id: c.id, name: c.name })));
-        setSelectedChannels(new Set(saved.map((c) => c.id)));
-        setChannelNames(Object.fromEntries(saved.map((c) => [c.id, c.name])));
-      }
-    } catch {
-      /* sessiz */
-    }
-  }
-
-  async function loadChannels() {
-    if (!botToken.trim()) return;
-    setLoadingChannels(true);
-    setNotifyStatus(null);
-    try {
-      const res = await fetch("/api/slack/channels", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: botToken.trim() }),
-      });
-      const j = await res.json();
-      if (res.ok) {
-        setChannelList(j.chats ?? []);
-        setChannelNames((prev) => {
-          const n = { ...prev };
-          for (const c of j.chats ?? []) n[c.id] = c.name;
-          return n;
-        });
-        if ((j.chats ?? []).length === 0)
-          setNotifyStatus("No chats found. Add the bot to a group/channel and message it, or add a chat ID manually below.");
-      } else {
-        setNotifyStatus(`Failed to load chats: ${j.error ?? "error"}`);
-      }
-    } catch {
-      setNotifyStatus("Failed to load chats");
-    } finally {
-      setLoadingChannels(false);
-    }
-  }
-
-  function toggleChannel(id: string) {
-    setSelectedChannels((prev) => {
-      const s = new Set(prev);
-      s.has(id) ? s.delete(id) : s.add(id);
-      return s;
-    });
-  }
-
-  async function sendNotify() {
-    const msg = notifyMessage.trim();
-    if (!botToken.trim() || !msg || selectedChannels.size === 0) return;
-    setSendingNotify(true);
-    setNotifyStatus(null);
-    try {
-      const chats = [...selectedChannels].map((id) => ({ id, name: channelNames[id] ?? id }));
-      const res = await fetch("/api/slack/notify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: botToken.trim(), chats, message: msg }),
-      });
-      const j = await res.json();
-      if (res.ok) {
-        setNotifyStatus(`Sent: ${j.sent}/${j.total} chats`);
-        setNotifyMessage("");
-      } else {
-        setNotifyStatus(`Error: ${j.error ?? "failed to send"}`);
-      }
-    } catch {
-      setNotifyStatus("Failed to send");
-    } finally {
-      setSendingNotify(false);
-    }
-  }
   const notesOrder = notesModalId != null ? orders.list.find((o) => o.id === notesModalId) ?? null : null;
 
   async function addNote(orderId: number) {
@@ -594,9 +487,6 @@ export default function DashboardClient({
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <button className="btn" onClick={() => setShowUserModal(true)}>
             <UserPlus size={14} /> Add User
-          </button>
-          <button className="btn" onClick={openNotifyModal}>
-            <Bell size={14} /> Notify
           </button>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "stretch", gap: 2 }}>
             <button className="btn" onClick={checkUpdates} disabled={checkingUpdates} title="Check thorsmmprovider /updates for today's rate changes">
@@ -1120,98 +1010,6 @@ export default function DashboardClient({
                   <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>{fmt(n.createdAt)}</div>
                 </div>
               ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showNotifyModal && (
-        <div onClick={() => setShowNotifyModal(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "grid", placeItems: "center", zIndex: 50, padding: 16 }}>
-          <div className="card" onClick={(e) => e.stopPropagation()} style={{ padding: 0, overflow: "hidden", display: "flex", flexDirection: "column", width: "100%", maxWidth: 520, maxHeight: "88vh" }}>
-            <div className="section-head">
-              <h2 className="section-title"><Bell size={15} style={{ verticalAlign: "-2px", marginRight: 6 }} />Telegram Bot Notification</h2>
-              <button className="btn btn-icon btn-sm" onClick={() => setShowNotifyModal(false)} title="Close"><X size={14} /></button>
-            </div>
-            <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12, overflow: "auto" }}>
-              <div>
-                <label style={{ display: "block", fontSize: 12, color: "var(--text-muted)", marginBottom: 6 }}>Bot Token</label>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <input
-                    type="password"
-                    className="input input-sm"
-                    placeholder="123456789:ABCdef..."
-                    value={botToken}
-                    onChange={(e) => setBotToken(e.target.value)}
-                    style={{ flex: 1 }}
-                  />
-                  <button className="btn btn-sm" onClick={loadChannels} disabled={loadingChannels || !botToken.trim()}>
-                    <RefreshCw size={13} style={loadingChannels ? { animation: "spin 1s linear infinite" } : undefined} />
-                    {loadingChannels ? "Loading..." : "Load Chats"}
-                  </button>
-                </div>
-                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
-                  Token is saved automatically. Telegram only reveals chats the bot has recently interacted with — add it to a group/channel (as admin for channels) and message it, then Load Chats.
-                </div>
-              </div>
-
-              {channelList.length > 0 && (
-                <div>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, gap: 8 }}>
-                    <label style={{ fontSize: 12, color: "var(--text-muted)" }}>Chats · {selectedChannels.size} selected</label>
-                    <input
-                      className="input input-sm"
-                      placeholder="Search…"
-                      value={channelSearch}
-                      onChange={(e) => setChannelSearch(e.target.value)}
-                      style={{ width: 160 }}
-                    />
-                  </div>
-                  <div style={{ maxHeight: 220, overflow: "auto", border: "1px solid var(--border)", borderRadius: 8 }}>
-                    {channelList
-                      .filter((c) => c.name.toLowerCase().includes(channelSearch.toLowerCase()) || c.id.includes(channelSearch))
-                      .map((c) => (
-                        <label key={c.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 12px", borderBottom: "1px solid var(--border)", cursor: "pointer", fontSize: 13 }}>
-                          <input type="checkbox" checked={selectedChannels.has(c.id)} onChange={() => toggleChannel(c.id)} />
-                          <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</span>
-                          <span style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "ui-monospace, monospace" }}>{c.id}</span>
-                        </label>
-                      ))}
-                  </div>
-                </div>
-              )}
-
-              <div>
-                <label style={{ display: "block", fontSize: 12, color: "var(--text-muted)", marginBottom: 6 }}>Add chat by ID (optional)</label>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <input className="input input-sm" placeholder="Chat ID (e.g. -1001234567890)" value={manualChatId} onChange={(e) => setManualChatId(e.target.value)} style={{ flex: 1 }} />
-                  <input className="input input-sm" placeholder="Label (optional)" value={manualChatName} onChange={(e) => setManualChatName(e.target.value)} style={{ width: 130 }} />
-                  <button className="btn btn-sm" onClick={addManualChat} disabled={!manualChatId.trim()}><Plus size={13} /> Add</button>
-                </div>
-              </div>
-
-              <div>
-                <label style={{ display: "block", fontSize: 12, color: "var(--text-muted)", marginBottom: 6 }}>Message</label>
-                <textarea
-                  className="input input-sm"
-                  placeholder="Notification message…"
-                  value={notifyMessage}
-                  onChange={(e) => setNotifyMessage(e.target.value)}
-                  rows={3}
-                  style={{ resize: "vertical", width: "100%" }}
-                />
-              </div>
-
-              {notifyStatus && (
-                <div className="badge badge-info" style={{ padding: "8px 12px", justifyContent: "flex-start" }}>{notifyStatus}</div>
-              )}
-
-              <button
-                className="btn btn-primary"
-                onClick={sendNotify}
-                disabled={sendingNotify || !botToken.trim() || !notifyMessage.trim() || selectedChannels.size === 0}
-              >
-                <Send size={14} /> {sendingNotify ? "Sending..." : `Send${selectedChannels.size ? ` (${selectedChannels.size})` : ""}`}
-              </button>
             </div>
           </div>
         </div>
