@@ -105,6 +105,12 @@ model OrderNote {
   @@index([orderId])
 }
 
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
 model SyncRun {
   id             Int       @id @default(autoincrement())
   startedAt      DateTime  @default(now())

@@ -17,4 +17,8 @@ export const env = {
   // member ID formatı kullanılmalı: "<@U0XXXXXXX>". Düz metin (ör. "@Oğuz
   // Demirbay") sadece görünür, bildirim atmaz.
   SLACK_MENTION: process.env.SLACK_MENTION ?? "@Oğuz Demirbay",
+  // thorsmmprovider.com /updates sayfasını izlemek için giriş bilgisi.
+  THOR_UPDATES_BASE: process.env.THOR_UPDATES_BASE ?? "https://thorsmmprovider.com",
+  THOR_UPDATES_USER: process.env.THOR_UPDATES_USER ?? "",
+  THOR_UPDATES_PASS: process.env.THOR_UPDATES_PASS ?? "",
 };
