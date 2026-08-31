@@ -1,9 +1,9 @@
 import { prisma } from "./db";
 import { fetchUpdateRows } from "./thorUpdates";
-import { tgSendMessage } from "./telegram";
+import { postWebhook } from "./slack";
+import { env } from "./env";
 
 const STATE_KEY = "thorUpdatesSent";
-const BOT_KEY = "botNotify";
 const MAX_KEYS = 8000; // sent-set üst sınırı
 const MAX_SEND_PER_RUN = 40; // bir turda gönderilecek yeni satır tavanı
 
@@ -34,17 +34,6 @@ async function writeState(seeded: boolean, keys: string[]) {
     create: { key: STATE_KEY, value },
     update: { value },
   });
-}
-
-async function readBotConfig(): Promise<{ token: string; chats: { id: string; name: string }[] }> {
-  const row = await prisma.setting.findUnique({ where: { key: BOT_KEY } });
-  if (!row) return { token: "", chats: [] };
-  try {
-    const p = JSON.parse(row.value) as { token?: string; chats?: { id: string; name: string }[] };
-    return { token: p.token ?? "", chats: p.chats ?? [] };
-  } catch {
-    return { token: "", chats: [] };
-  }
 }
 
 /**
@@ -83,10 +72,10 @@ export async function runUpdatesCheck(): Promise<{
   const newRows = rows.filter((r) => !sentSet.has(r.key));
   if (newRows.length === 0) return { ok: true, total: rows.length, new: 0, sent: 0 };
 
-  const cfg = await readBotConfig();
-  // Telegram yapılandırılmamışsa satırları "gönderildi" saymayız — sonra gönderilsin
-  if (!cfg.token || cfg.chats.length === 0) {
-    return { ok: true, total: rows.length, new: newRows.length, sent: 0, error: "telegram not configured" };
+  const webhook = env.UPDATES_SLACK_WEBHOOK_URL || env.SLACK_WEBHOOK_URL;
+  // Webhook yoksa satırları "gönderildi" saymayız — sonra gönderilsin
+  if (!webhook) {
+    return { ok: true, total: rows.length, new: newRows.length, sent: 0, error: "slack webhook not configured" };
   }
 
   // Tabloda yeniler genelde üstte — eskiden yeniye sırayla gönder
@@ -94,11 +83,9 @@ export async function runUpdatesCheck(): Promise<{
   let sent = 0;
   const newlySeen = [...state.keys];
   for (const row of toSend) {
-    const text = `🔔 Service Update\n${row.service}\n${row.date}\n${row.update}`;
-    for (const ch of cfg.chats) {
-      const r = await tgSendMessage(cfg.token, ch.id, text);
-      if (r.ok) sent++;
-    }
+    const text = `:bell: *Service Update*\n${row.service}\n${row.date}\n${row.update}`;
+    const ok = await postWebhook(webhook, text);
+    if (ok) sent++;
     newlySeen.push(row.key);
   }
   await writeState(true, newlySeen);

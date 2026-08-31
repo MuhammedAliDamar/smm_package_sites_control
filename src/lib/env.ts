@@ -21,4 +21,6 @@ export const env = {
   THOR_UPDATES_BASE: process.env.THOR_UPDATES_BASE ?? "https://thorsmmprovider.com",
   THOR_UPDATES_USER: process.env.THOR_UPDATES_USER ?? "",
   THOR_UPDATES_PASS: process.env.THOR_UPDATES_PASS ?? "",
+  // /updates bildirimlerinin gideceği Slack webhook (yoksa genel SLACK_WEBHOOK_URL).
+  UPDATES_SLACK_WEBHOOK_URL: process.env.UPDATES_SLACK_WEBHOOK_URL ?? "",
 };

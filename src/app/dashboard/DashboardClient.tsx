@@ -598,11 +598,15 @@ export default function DashboardClient({
           <button className="btn" onClick={openNotifyModal}>
             <Bell size={14} /> Notify
           </button>
-          <button className="btn" onClick={checkUpdates} disabled={checkingUpdates} title="Check thorsmmprovider /updates for today's rate changes">
-            <RefreshCw size={14} style={checkingUpdates ? { animation: "spin 1s linear infinite" } : undefined} />
-            {checkingUpdates ? "Checking..." : "Check Services Updates"}
-          </button>
-          {updatesResult && <span className="badge badge-info" style={{ alignSelf: "center" }}>{updatesResult}</span>}
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "stretch", gap: 2 }}>
+            <button className="btn" onClick={checkUpdates} disabled={checkingUpdates} title="Check thorsmmprovider /updates for today's rate changes">
+              <RefreshCw size={14} style={checkingUpdates ? { animation: "spin 1s linear infinite" } : undefined} />
+              {checkingUpdates ? "Checking..." : "Check Services Updates"}
+            </button>
+            {updatesResult && (
+              <span style={{ fontSize: 11, color: "var(--text-muted)", textAlign: "center" }}>{updatesResult}</span>
+            )}
+          </div>
           <button className="btn btn-primary" onClick={syncNow} disabled={syncing}>
             <RefreshCw size={14} style={syncing ? { animation: "spin 1s linear infinite" } : undefined} />
             {syncing ? "Syncing..." : "Sync Now"}
