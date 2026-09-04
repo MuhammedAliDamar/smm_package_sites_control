@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { sendSlack } from "@/lib/slack";
+import { sendSlack, postWebhook } from "@/lib/slack";
+import { env } from "@/lib/env";
 
 // Bir siparişin notlarını listeler (yeniden eskiye).
 export async function GET(
@@ -50,12 +51,14 @@ export async function POST(
     data: { lastNoteAt: note.createdAt },
   });
 
-  // Checkbox işaretliyse aynı Slack kanalına bildirim gönder.
+  // Checkbox işaretliyse seçili Slack kanalına bildirim gönder. channelId, env'deki
+  // SLACK_NOTE_CHANNELS index'i; geçersizse/verilmezse varsayılan webhook.
   let slackSent = false;
   if (data.notify === true) {
-    slackSent = await sendSlack(
-      `Not eklendi — ORDER ID: ${id}\n${note.body}`,
-    );
+    const text = `Not eklendi — ORDER ID: ${id}\n${note.body}`;
+    const idx = Number(data.channelId);
+    const channel = Number.isInteger(idx) ? env.SLACK_NOTE_CHANNELS[idx] : undefined;
+    slackSent = channel ? await postWebhook(channel.url, text) : await sendSlack(text);
   }
 
   return NextResponse.json({ ok: true, note, slackSent });

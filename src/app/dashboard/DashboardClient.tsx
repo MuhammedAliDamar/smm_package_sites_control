@@ -52,7 +52,7 @@ type OrderRow = {
   status: string; chargeValue: number | null; chargeCurrency: string | null;
   provider: string | null; createdAt: string;
   refillRequestedAt: string | null; refillCheckedAt: string | null;
-  refillNoIncrease: boolean | null; refillCanceledAt: string | null;
+  refillNoIncrease: boolean | null; refillCanceledAt: string | null; refillable: boolean;
   notes: { id: number; body: string; createdAt: string }[];
 };
 
@@ -385,7 +385,16 @@ export default function DashboardClient({
   const [newNoteBody, setNewNoteBody] = useState("");
   const [savingNote, setSavingNote] = useState(false);
   const [notifyChannel, setNotifyChannel] = useState(false);
+  const [slackChannels, setSlackChannels] = useState<{ id: number; name: string }[]>([]);
+  const [noteChannelId, setNoteChannelId] = useState(0);
   const [showSyncs, setShowSyncs] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/slack/note-channels")
+      .then((r) => r.json())
+      .then((j) => setSlackChannels(j.channels ?? []))
+      .catch(() => {});
+  }, []);
 
   // Updates (thorsmmprovider /updates) elle kontrol
   const [checkingUpdates, setCheckingUpdates] = useState(false);
@@ -419,7 +428,7 @@ export default function DashboardClient({
       const res = await fetch(`/api/orders/${orderId}/note`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ body, notify: notifyChannel }),
+        body: JSON.stringify({ body, notify: notifyChannel, channelId: noteChannelId }),
       });
       if (res.ok) {
         setNewNoteBody("");
@@ -759,7 +768,7 @@ export default function DashboardClient({
                   <SortHeader field="chargeValue">Charge</SortHeader>
                   <SortHeader field="createdAt">Date</SortHeader>
                   <SortHeader field="lastNoteAt">Note</SortHeader>
-                  <th>Refill</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -875,7 +884,7 @@ export default function DashboardClient({
                     </td>
                     <td>
                       {(() => {
-                        const completed = o.status.toLowerCase().includes("complet");
+                        // Refill butonu: raw.actions.refill === true olanlarda görünür
                         const localReq = refillState[o.id]?.requested;
                         const loading = refillState[o.id]?.loading;
                         const requested = Boolean(o.refillRequestedAt) || localReq;
@@ -893,9 +902,9 @@ export default function DashboardClient({
                           </button>
                         );
 
-                        // Refill kısmı — sadece completed siparişlerde
+                        // Refill kısmı — sadece raw.actions.refill true olanlarda
                         let refillPart: React.ReactNode = null;
-                        if (completed && requested) {
+                        if (requested) {
                           const canceled = Boolean(o.refillCanceledAt);
                           const done = Boolean(o.refillCheckedAt);
                           const label = canceled ? "Canceled" : done ? (o.refillNoIncrease ? "No increase" : "Refilled") : "Tracking";
@@ -916,7 +925,7 @@ export default function DashboardClient({
                               </button>
                             </>
                           );
-                        } else if (completed) {
+                        } else if (o.refillable) {
                           refillPart = (
                             <button className="btn btn-icon btn-sm" onClick={() => requestRefill(o)} disabled={loading} title="Request refill">
                               <RefreshCw size={13} style={loading ? { animation: "spin 1s linear infinite" } : undefined} />
@@ -1031,14 +1040,27 @@ export default function DashboardClient({
                 rows={2}
                 style={{ resize: "vertical" }}
               />
-              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--text-muted)", cursor: "pointer" }}>
-                <input
-                  type="checkbox"
-                  checked={notifyChannel}
-                  onChange={(e) => setNotifyChannel(e.target.checked)}
-                />
-                Notify Slack channel
-              </label>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--text-muted)", cursor: "pointer" }}>
+                  <input
+                    type="checkbox"
+                    checked={notifyChannel}
+                    onChange={(e) => setNotifyChannel(e.target.checked)}
+                  />
+                  Notify Slack channel
+                </label>
+                {notifyChannel && slackChannels.length > 0 && (
+                  <select
+                    value={noteChannelId}
+                    onChange={(e) => setNoteChannelId(Number(e.target.value))}
+                    style={{ padding: "5px 8px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text)", fontSize: 13 }}
+                  >
+                    {slackChannels.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
               <button className="btn btn-primary btn-sm" onClick={() => addNote(notesOrder.id)} disabled={savingNote || !newNoteBody.trim()}>
                 <Plus size={14} /> {savingNote ? "Adding..." : "Add Note"}
               </button>
