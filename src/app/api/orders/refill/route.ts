@@ -96,10 +96,23 @@ export async function PATCH(req: NextRequest) {
         refillBaselineCount: null,
         refillCheckedAt: null,
         refillNoIncrease: null,
+        refillCanceledAt: null,
+        refillLastReminderAt: null,
       },
     });
     return NextResponse.json({ ok: true, id, untracked: true });
   }
+
+  // İptal: takibi ve 5 saatlik hatırlatmaları durdurur; kayıt "Canceled" kalır.
+  if (body.cancel === true) {
+    await prisma.order.update({
+      where: { id },
+      data: { refillCanceledAt: new Date() },
+    });
+    const slackOk = await sendSlack(`${env.SLACK_MENTION}\n🚫 Refill iptal edildi\nORDER ID: ${id}`);
+    return NextResponse.json({ ok: true, id, canceled: true, slackSent: slackOk });
+  }
+
   await prisma.order.update({
     where: { id },
     data: { refillNoIncrease: false, refillCheckedAt: new Date() },

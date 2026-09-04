@@ -1,0 +1,279 @@
+import { prisma } from "./db";
+import { checkOrder } from "./checker";
+
+// Servis-bazlı periyot drop hesabı (dashboard_v4 processServicePeriod mantığının
+// thor'a uyarlanmış hâli). vanak'ın completed siparişlerini servise göre gruplar;
+// her periyot N için yaşı >= N gün olan siparişleri counter API ile örnekleyip
+// ortalama drop'u periodsData[N]'e yazar. Rate-limit yok → yüksek paralellik.
+
+const USERNAME = "vanak";
+const COMPLETED = ["completed", "Completed", "complete", "Complete"];
+export const PERIODS = [3, 7, 10, 15, 30] as const;
+
+const CANDIDATES = 60; // periyot başına aday sipariş (en yeni önce)
+const MAX_CHECK = 30; // periyot başına hedeflenen başarılı ölçüm
+const CONCURRENCY = 20; // eşzamanlı scrape (rate-limit yok)
+// Filtre ayarları (dashboard_v4 filterSettings karşılığı)
+const MIN_QUANTITY = 500; // adet < 500 siparişler dışlanır
+const MAX_START_COUNT = 2000; // start count > 2000 siparişler dışlanır
+const OVER_LIMIT = 1.2; // current > start + qty*1.2 (%20) ise şişmiş/refill → skip
+const PROGRESS_KEY = "vanakDropCompute";
+
+type OrderDetail = {
+  orderId: number;
+  dropRate: number;
+  link: string | null;
+  orderDate: string;
+  quantity: number | null;
+  startCount: number | null;
+  currentCount: number;
+};
+type PeriodResult = { avgDropRate: number | null; checkedCount: number; totalFound: number; checkedAt: string; orders?: OrderDetail[] };
+type PeriodsData = Record<string, PeriodResult>;
+
+async function mapPool<T, R>(items: T[], concurrency: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let i = 0;
+  async function worker() {
+    while (i < items.length) {
+      const idx = i++;
+      out[idx] = await fn(items[idx]);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, worker));
+  return out;
+}
+
+async function computeServicePeriod(serviceId: number, days: number): Promise<PeriodResult> {
+  const now = Date.now();
+  const targetCutoff = new Date(now - days * 86400_000); // yaş >= days sınırı
+  const backLimit = new Date(now - days * 2 * 86400_000); // birincil pencere en fazla 2N geriye
+  const baseWhere = {
+    username: USERNAME,
+    serviceId,
+    status: { in: COMPLETED },
+    link: { not: null },
+    quantity: { gte: MIN_QUANTITY }, // min 500 adet
+    startCount: { lte: MAX_START_COUNT }, // max 2000 start count (lte null'ları da eler)
+  } as const;
+  const select = { id: true, link: true, quantity: true, startCount: true, serviceName: true, serviceType: true, createdAt: true } as const;
+
+  // 1) Birincil: yaşı [days, 2·days] — hedef güne en yakın (yeni) önce.
+  const primary = await prisma.order.findMany({
+    where: { ...baseWhere, createdAt: { lte: targetCutoff, gte: backLimit } },
+    orderBy: { createdAt: "desc" },
+    take: CANDIDATES,
+    select,
+  });
+
+  // 2) Yetmezse UZAK/eski tarihe değil, YAKIN tarihe (bugüne) doğru genişle:
+  //    yaşı < days olan daha yeni siparişler, hedefe en yakın (days'e yakın) önce.
+  let candidates = primary;
+  if (primary.length < CANDIDATES) {
+    const recent = await prisma.order.findMany({
+      where: { ...baseWhere, createdAt: { gt: targetCutoff } },
+      orderBy: { createdAt: "asc" },
+      take: CANDIDATES - primary.length,
+      select,
+    });
+    candidates = [...primary, ...recent];
+  }
+
+  const orders: OrderDetail[] = [];
+  // Paralel scrape; MAX_CHECK başarılı ölçüme ulaşınca gerisini boşver.
+  await mapPool(candidates, CONCURRENCY, async (o) => {
+    if (orders.length >= MAX_CHECK) return;
+    const r = await checkOrder(o);
+    if (r.error || r.currentCount == null || r.dropRate == null) return;
+    // Over-limit (şişmiş) siparişleri ele
+    if (o.startCount != null && o.quantity != null && r.currentCount > o.startCount + o.quantity * OVER_LIMIT) return;
+    if (orders.length < MAX_CHECK) {
+      orders.push({
+        orderId: o.id,
+        dropRate: r.dropRate,
+        link: o.link,
+        orderDate: o.createdAt.toISOString(),
+        quantity: o.quantity,
+        startCount: o.startCount,
+        currentCount: r.currentCount,
+      });
+    }
+  });
+
+  const drops = orders.map((o) => o.dropRate);
+  const avg = drops.length ? parseFloat((drops.reduce((a, b) => a + b, 0) / drops.length).toFixed(2)) : null;
+  return { avgDropRate: avg, checkedCount: orders.length, totalFound: candidates.length, checkedAt: new Date().toISOString(), orders };
+}
+
+async function setProgress(p: { running: boolean; total: number; done: number; startedAt: string; finishedAt?: string; error?: string }) {
+  await prisma.setting.upsert({
+    where: { key: PROGRESS_KEY },
+    create: { key: PROGRESS_KEY, value: JSON.stringify(p) },
+    update: { value: JSON.stringify(p) },
+  });
+}
+
+// Tek servis + tek periyot (gün) yeniden hesaplar; sadece o periyot key'ini günceller.
+export async function computeOnePeriod(serviceId: number, days: number) {
+  const result = await computeServicePeriod(serviceId, days);
+  const [existing, one] = await Promise.all([
+    prisma.serviceDropRate.findUnique({ where: { serviceId } }),
+    prisma.order.findFirst({ where: { username: USERNAME, serviceId }, select: { serviceName: true } }),
+  ]);
+  const periodsData: PeriodsData = { ...((existing?.periodsData as PeriodsData) ?? {}), [String(days)]: result };
+  await prisma.serviceDropRate.upsert({
+    where: { serviceId },
+    create: { serviceId, serviceName: one?.serviceName ?? null, periodsData },
+    update: { serviceName: one?.serviceName ?? null, periodsData },
+  });
+  return { serviceId, days, result };
+}
+
+// Tek servis için tüm periyotları yeniden hesaplar ve upsert eder (satır refresh).
+export async function computeOneService(serviceId: number) {
+  const one = await prisma.order.findFirst({ where: { username: USERNAME, serviceId }, select: { serviceName: true } });
+  const periodsData: PeriodsData = {};
+  for (const d of PERIODS) {
+    periodsData[String(d)] = await computeServicePeriod(serviceId, d);
+  }
+  await prisma.serviceDropRate.upsert({
+    where: { serviceId },
+    create: { serviceId, serviceName: one?.serviceName ?? null, periodsData },
+    update: { serviceName: one?.serviceName ?? null, periodsData },
+  });
+  return { serviceId, periodsData };
+}
+
+export async function getComputeProgress() {
+  const row = await prisma.setting.findUnique({ where: { key: PROGRESS_KEY } });
+  if (!row) return { running: false, total: 0, done: 0, startedAt: null as string | null, finishedAt: null as string | null };
+  try {
+    return JSON.parse(row.value);
+  } catch {
+    return { running: false, total: 0, done: 0, startedAt: null, finishedAt: null };
+  }
+}
+
+let inFlight = false;
+
+// Tüm vanak servisleri × PERIODS için hesaplar, periodsData'ya yazar. İlerlemeyi
+// Setting'e raporlar. Aynı anda tek çalışır (guard).
+export async function computeAllVanakServiceDrops(): Promise<{ started: boolean; services?: number; jobs?: number }> {
+  if (inFlight) return { started: false };
+  inFlight = true;
+  const startedAt = new Date().toISOString();
+  try {
+    const groups = await prisma.order.groupBy({
+      by: ["serviceId"],
+      where: { username: USERNAME, status: { in: COMPLETED }, serviceId: { not: null } },
+      _count: { _all: true },
+    });
+    const serviceIds = groups.map((g) => g.serviceId).filter((v): v is number => v != null);
+    const total = serviceIds.length * PERIODS.length;
+    let done = 0;
+    await setProgress({ running: true, total, done, startedAt });
+
+    for (const serviceId of serviceIds) {
+      // Servis adı (ilk siparişten)
+      const one = await prisma.order.findFirst({ where: { username: USERNAME, serviceId }, select: { serviceName: true } });
+      const periodsData: PeriodsData = {};
+      for (const d of PERIODS) {
+        periodsData[String(d)] = await computeServicePeriod(serviceId, d);
+        done++;
+        await setProgress({ running: true, total, done, startedAt });
+      }
+      await prisma.serviceDropRate.upsert({
+        where: { serviceId },
+        create: { serviceId, serviceName: one?.serviceName ?? null, periodsData },
+        update: { serviceName: one?.serviceName ?? null, periodsData },
+      });
+    }
+
+    await setProgress({ running: false, total, done, startedAt, finishedAt: new Date().toISOString() });
+    return { started: true, services: serviceIds.length, jobs: total };
+  } catch (e) {
+    await setProgress({ running: false, total: 0, done: 0, startedAt, finishedAt: new Date().toISOString(), error: e instanceof Error ? e.message : "error" });
+    return { started: true };
+  } finally {
+    inFlight = false;
+  }
+}
+
+// Service Drop Rate sekmesi için okuma: vanak completed siparişlerini servise göre
+// gruplar, ServiceDropRate.periodsData ile birleştirir. Hesaplama/scrape YOK.
+export async function readVanakServiceDrops() {
+  const grouped = await prisma.order.groupBy({
+    by: ["serviceId"],
+    where: { username: USERNAME, status: { in: COMPLETED }, serviceId: { not: null } },
+    _count: { _all: true },
+    _min: { createdAt: true },
+    _max: { createdAt: true },
+  });
+  if (!grouped.length) {
+    return { username: USERNAME, totalOrders: 0, serviceCount: 0, services: [] };
+  }
+
+  const serviceIds = grouped.map((g) => g.serviceId).filter((v): v is number => v != null);
+  const [rates, names] = await Promise.all([
+    prisma.serviceDropRate.findMany({ where: { serviceId: { in: serviceIds } } }),
+    prisma.order.findMany({
+      where: { username: USERNAME, serviceId: { in: serviceIds } },
+      distinct: ["serviceId"],
+      select: { serviceId: true, serviceName: true },
+    }),
+  ]);
+  const rateMap = new Map(rates.map((r) => [r.serviceId, r]));
+  const nameMap = new Map(names.map((n) => [n.serviceId, n]));
+
+  let totalOrders = 0;
+  const services = grouped
+    .filter((g) => g.serviceId != null)
+    .map((g) => {
+      const serviceId = g.serviceId as number;
+      totalOrders += g._count._all;
+      const rate = rateMap.get(serviceId);
+      const pd = (rate?.periodsData as PeriodsData | undefined) ?? {};
+      const dropRates: Record<string, number | null> = {};
+      const periodCounts: Record<string, number> = {};
+      for (const d of PERIODS) {
+        const v = pd[String(d)]?.avgDropRate;
+        dropRates[String(d)] = v === null || v === undefined || isNaN(Number(v)) ? null : Number(v);
+        periodCounts[String(d)] = pd[String(d)]?.checkedCount ?? 0;
+      }
+      const vals = Object.values(dropRates).filter((v): v is number => v !== null);
+      const avgDropRate = vals.length ? parseFloat((vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2)) : null;
+      // Kaç sipariş işleme alındı = periyotlar boyunca ölçülen (checked) toplam
+      const processedCount = PERIODS.reduce((sum, d) => sum + (pd[String(d)]?.checkedCount ?? 0), 0);
+      const info = nameMap.get(serviceId);
+      return {
+        serviceId,
+        serviceName: rate?.serviceName ?? info?.serviceName ?? null,
+        orderCount: g._count._all,
+        isTracked: Boolean(rate),
+        dropRates,
+        periodCounts,
+        avgDropRate,
+        processedCount,
+        lastCheckedAt: rate?.updatedAt?.toISOString() ?? null,
+      };
+    })
+    .sort((a, b) => b.orderCount - a.orderCount);
+
+  return { username: USERNAME, totalOrders, serviceCount: services.length, services };
+}
+
+// Modal detayı: bir servis + periyot için işleme alınan siparişler ve drop oranları.
+export async function readPeriodOrders(serviceId: number, days: number) {
+  const rate = await prisma.serviceDropRate.findUnique({ where: { serviceId } });
+  const pd = (rate?.periodsData as PeriodsData | undefined) ?? {};
+  const p = pd[String(days)];
+  const orders = (p?.orders ?? []).slice().sort((a, b) => b.dropRate - a.dropRate);
+  return {
+    serviceId,
+    serviceName: rate?.serviceName ?? null,
+    days,
+    avgDropRate: p?.avgDropRate ?? null,
+    checkedCount: p?.checkedCount ?? 0,
+    orders,
+  };
+}

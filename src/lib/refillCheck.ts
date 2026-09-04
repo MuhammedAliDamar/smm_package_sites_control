@@ -21,6 +21,7 @@ export async function runRefillCheck() {
     where: {
       refillRequestedAt: { not: null, lte: cutoff },
       refillCheckedAt: null,
+      refillCanceledAt: null,
     },
     select: {
       id: true,

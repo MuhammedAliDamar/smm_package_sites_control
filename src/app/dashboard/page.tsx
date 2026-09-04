@@ -220,6 +220,7 @@ export default async function DashboardPage({
           refillRequestedAt: o.refillRequestedAt?.toISOString() ?? null,
           refillCheckedAt: o.refillCheckedAt?.toISOString() ?? null,
           refillNoIncrease: o.refillNoIncrease,
+          refillCanceledAt: o.refillCanceledAt?.toISOString() ?? null,
           notes: o.notes.map((n) => ({
             id: n.id,
             body: n.body,

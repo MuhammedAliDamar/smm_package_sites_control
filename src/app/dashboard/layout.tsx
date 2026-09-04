@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { readSession } from "@/lib/auth";
 import LogoutButton from "./_components/LogoutButton";
 import ThemeToggle from "./_components/ThemeToggle";
+import NavTabs from "./_components/NavTabs";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await readSession();
@@ -10,9 +11,12 @@ export default async function DashboardLayout({ children }: { children: React.Re
   return (
     <div className="app-shell">
       <header className="app-header">
-        <div className="brand">
-          <div className="brand-dot">T</div>
-          ThorSMM Admin
+        <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
+          <div className="brand">
+            <div className="brand-dot">T</div>
+            ThorSMM Admin
+          </div>
+          <NavTabs />
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <span style={{ fontSize: 13, color: "var(--text-muted)" }}>{session.email}</span>

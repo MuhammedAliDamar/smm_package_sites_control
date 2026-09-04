@@ -23,4 +23,14 @@ export const env = {
   THOR_UPDATES_PASS: process.env.THOR_UPDATES_PASS ?? "",
   // /updates bildirimlerinin gideceği Slack webhook (yoksa genel SLACK_WEBHOOK_URL).
   UPDATES_SLACK_WEBHOOK_URL: process.env.UPDATES_SLACK_WEBHOOK_URL ?? "",
+  // Vanak Drop sekmesi için ekstra erişim anahtarı. Session login'e ek olarak,
+  // bu key girilmeden sayfa açılmaz. Boşsa gate devre dışı kalır.
+  VANAK_ACCESS_KEY: process.env.VANAK_ACCESS_KEY ?? "",
+  // Harici drop-rate servisi (diğer local proje). Service Drop Rate sekmesi
+  // buradan cron ile önceden hesaplanmış oranları çeker (proxy ile, key gizli).
+  DROPRATE_API_BASE: process.env.DROPRATE_API_BASE ?? "",
+  DROPRATE_API_KEY: process.env.DROPRATE_API_KEY ?? "",
+  // Vanak API'lerinin izinli origin'i (CORS). Boşsa isteğin kendi host'u (same-origin)
+  // kabul edilir; set edilirse yalnızca bu origin'den çağrı yapılabilir.
+  APP_ORIGIN: process.env.APP_ORIGIN ?? "",
 };

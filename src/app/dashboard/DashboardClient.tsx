@@ -6,7 +6,7 @@ import {
   ListOrdered, CheckCircle2, Clock, XCircle, DollarSign,
   Users as UsersIcon, RefreshCw, AlertTriangle, Activity,
   Plus, Trash2, Power, Search, X, Globe, ArrowUp, ArrowDown,
-  TrendingDown, RotateCcw, Check, ExternalLink, UserPlus, StickyNote, ChevronDown,
+  TrendingDown, Check, ExternalLink, UserPlus, StickyNote, ChevronDown, Ban,
 } from "lucide-react";
 
 type Stats = {
@@ -52,7 +52,7 @@ type OrderRow = {
   status: string; chargeValue: number | null; chargeCurrency: string | null;
   provider: string | null; createdAt: string;
   refillRequestedAt: string | null; refillCheckedAt: string | null;
-  refillNoIncrease: boolean | null;
+  refillNoIncrease: boolean | null; refillCanceledAt: string | null;
   notes: { id: number; body: string; createdAt: string }[];
 };
 
@@ -194,6 +194,18 @@ export default function DashboardClient({
     const t = setInterval(run, 15 * 60 * 1000);
     return () => clearInterval(t);
   }, [router, startTransition]);
+
+  // 5 saatlik refill hatırlatmaları — dashboard açıkken 30 dk'da bir tetikle
+  // (cron:local olmadan da çalışsın diye). Lib per-sipariş 5 saat kontrolü yapar.
+  const didRefillReminder = useRef(false);
+  useEffect(() => {
+    if (didRefillReminder.current) return;
+    didRefillReminder.current = true;
+    const run = () => fetch("/api/cron/refill-reminders", { method: "POST" }).catch(() => {});
+    run();
+    const t = setInterval(run, 30 * 60 * 1000);
+    return () => clearInterval(t);
+  }, []);
 
   // /updates izleme — dashboard açıkken 10 dakikada bir bugüne ait yeni
   // güncellemeleri Telegram'a bildirir (cron:local olmadan da çalışsın diye).
@@ -347,6 +359,25 @@ export default function DashboardClient({
       }
     } catch {
       /* sessiz */
+    }
+  }
+
+  // Sipariş iptal bildirimi (tüm siparişler): aynı kanala FARKLI mesaj. Aktif
+  // refill varsa hatırlatmaları da durdurur.
+  const [cancelLoading, setCancelLoading] = useState<Record<number, boolean>>({});
+  async function cancelOrder(orderId: number) {
+    setCancelLoading((p) => ({ ...p, [orderId]: true }));
+    try {
+      const res = await fetch("/api/orders/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: orderId }),
+      });
+      if (res.ok) startTransition(() => router.refresh());
+    } catch {
+      /* sessiz */
+    } finally {
+      setCancelLoading((p) => ({ ...p, [orderId]: false }));
     }
   }
 
@@ -848,16 +879,30 @@ export default function DashboardClient({
                         const localReq = refillState[o.id]?.requested;
                         const loading = refillState[o.id]?.loading;
                         const requested = Boolean(o.refillRequestedAt) || localReq;
-                        if (!completed) return <span style={{ color: "var(--text-muted)" }}>—</span>;
-                        if (requested) {
+                        const cLoad = cancelLoading[o.id];
+
+                        // Cancel butonu — TÜM siparişlerde (Slack'e farklı mesaj)
+                        const cancelBtn = (
+                          <button
+                            className="btn btn-icon btn-sm btn-danger"
+                            onClick={() => cancelOrder(o.id)}
+                            disabled={cLoad}
+                            title="Cancel — notify Slack"
+                          >
+                            <Ban size={13} style={cLoad ? { animation: "spin 1s linear infinite" } : undefined} />
+                          </button>
+                        );
+
+                        // Refill kısmı — sadece completed siparişlerde
+                        let refillPart: React.ReactNode = null;
+                        if (completed && requested) {
+                          const canceled = Boolean(o.refillCanceledAt);
                           const done = Boolean(o.refillCheckedAt);
-                          const label = done
-                            ? (o.refillNoIncrease ? "No increase" : "Refilled")
-                            : "Tracking";
-                          const tone = done && o.refillNoIncrease ? "badge-danger" : done ? "badge-success" : "badge-info";
-                          const isNoIncrease = done && o.refillNoIncrease;
-                          return (
-                            <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                          const label = canceled ? "Canceled" : done ? (o.refillNoIncrease ? "No increase" : "Refilled") : "Tracking";
+                          const tone = canceled ? "badge-muted" : done && o.refillNoIncrease ? "badge-danger" : done ? "badge-success" : "badge-info";
+                          const isNoIncrease = !canceled && done && o.refillNoIncrease;
+                          refillPart = (
+                            <>
                               <span
                                 className={`badge ${tone}`}
                                 onDoubleClick={isNoIncrease ? () => markRefilled(o.id) : undefined}
@@ -866,26 +911,24 @@ export default function DashboardClient({
                               >
                                 <Check size={11} /> {label}
                               </span>
-                              <button
-                                className="btn btn-icon btn-sm"
-                                onClick={() => removeTracking(o.id)}
-                                title="Remove tracking"
-                              >
+                              <button className="btn btn-icon btn-sm" onClick={() => removeTracking(o.id)} title="Remove tracking">
                                 <X size={12} />
                               </button>
-                            </span>
+                            </>
+                          );
+                        } else if (completed) {
+                          refillPart = (
+                            <button className="btn btn-icon btn-sm" onClick={() => requestRefill(o)} disabled={loading} title="Request refill">
+                              <RefreshCw size={13} style={loading ? { animation: "spin 1s linear infinite" } : undefined} />
+                            </button>
                           );
                         }
+
                         return (
-                          <button
-                            className="btn btn-sm"
-                            onClick={() => requestRefill(o)}
-                            disabled={loading}
-                            title="Request refill"
-                          >
-                            <RotateCcw size={13} style={loading ? { animation: "spin 1s linear infinite" } : undefined} />
-                            {loading ? "..." : "Refill"}
-                          </button>
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                            {refillPart}
+                            {cancelBtn}
+                          </span>
                         );
                       })()}
                     </td>

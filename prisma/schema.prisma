@@ -74,6 +74,8 @@ model Order {
   refillCheckedAt     DateTime?
   refillNoIncrease    Boolean?
   refillSlackTs       String?
+  refillCanceledAt    DateTime?
+  refillLastReminderAt DateTime?
   note                String?
   lastNoteAt          DateTime?
   status              String
@@ -109,6 +111,44 @@ model Setting {
   key       String   @id
   value     String
   updatedAt DateTime @updatedAt
+}
+
+// Servis-bazlı, periyot (3/7/10/15/30 gün) drop oranları. Cron/buton counter API
+// ile örnekleyip periodsData'ya yazar; Service Drop Rate sekmesi buradan okur.
+model ServiceDropRate {
+  serviceId   Int      @id
+  serviceName String?
+  periodsData Json     @default("{}")
+  updatedAt   DateTime @updatedAt
+}
+
+// Vanak paneli sessiz oturum/presence logu. Client arka planda periyodik ping atar
+// (kullanıcının haberi olmaz); açılıştan kapanışa süre + IP + fingerprint + cihaz
+// bilgisi loglanır. Admin aktif oturumları ve geçmişi buradan görür.
+model PanelSession {
+  id          Int       @id @default(autoincrement())
+  sessionId   String    @unique
+  clientId    String
+  panel       String    @default("vanak")
+  fingerprint String?
+  ipAddress   String?
+  userAgent   String?
+  language    String?
+  timezone    String?
+  screen      String?
+  platform    String?
+  path        String?
+  referrer    String?
+  startedAt   DateTime  @default(now())
+  lastSeenAt  DateTime  @default(now())
+  endedAt     DateTime?
+  durationMs  Int       @default(0)
+  hits        Int       @default(1)
+
+  @@index([panel, lastSeenAt])
+  @@index([clientId])
+  @@index([fingerprint])
+  @@index([startedAt])
 }
 
 model SyncRun {

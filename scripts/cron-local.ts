@@ -8,7 +8,10 @@ async function main() {
   const { runSync } = await import("../src/lib/sync");
   const { runDropCheck } = await import("../src/lib/dropCheck");
   const { runRefillCheck } = await import("../src/lib/refillCheck");
+  const { runRefillReminders } = await import("../src/lib/refillReminders");
   const { runUpdatesCheck } = await import("../src/lib/updatesNotify");
+  const { computeAllVanakServiceDrops } = await import("../src/lib/vanakDrops");
+  const VANAK_DROPS_HOUR = 4; // her gün 04:00'te servis drop rate'leri hesapla
   const minutes = Number(process.env.SYNC_INTERVAL_MINUTES ?? 10);
   const intervalMs = minutes * 60 * 1000;
   console.log(`Local cron çalışıyor: her ${minutes} dakikada bir senkron.`);
@@ -60,6 +63,15 @@ async function main() {
     }
   }
 
+  async function refillReminderTick() {
+    try {
+      const r = await runRefillReminders();
+      if (r.sent > 0) console.log(`[${new Date().toISOString()}] REFILL REMINDER: sent=${r.sent}`);
+    } catch (err) {
+      console.error(`[${new Date().toISOString()}] refill reminder HATA:`, err);
+    }
+  }
+
   async function updatesTick() {
     const t0 = Date.now();
     try {
@@ -77,12 +89,32 @@ async function main() {
     }
   }
 
+  let lastVanakDropsDay = -1;
+  async function vanakDropsTick() {
+    const now = new Date();
+    if (now.getHours() !== VANAK_DROPS_HOUR || now.getDate() === lastVanakDropsDay) return;
+    lastVanakDropsDay = now.getDate();
+    const t0 = Date.now();
+    try {
+      const r = await computeAllVanakServiceDrops();
+      console.log(
+        `[${new Date().toISOString()}] VANAK DROPS: started=${r.started} services=${r.services ?? "-"} jobs=${r.jobs ?? "-"} ${Date.now() - t0}ms`,
+      );
+    } catch (err) {
+      console.error(`[${new Date().toISOString()}] vanak drops HATA:`, err);
+    }
+  }
+
   await tick();
   setInterval(tick, intervalMs);
   setInterval(dropTick, 60_000);
+  setInterval(vanakDropsTick, 60_000);
   // Refill'lerin 24 saatlik kontrolü: saatte bir tarar, süresi dolanı işler.
   setInterval(refillTick, 60 * 60_000);
   await refillTick();
+  // 5 saatlik hatırlatmalar: her 30 dk'da tara, süresi geleni gönder.
+  setInterval(refillReminderTick, 30 * 60_000);
+  await refillReminderTick();
   // /updates izleme: 10 dakikada bir bugüne ait yeni satırları Telegram'a bildir.
   setInterval(updatesTick, 10 * 60_000);
   await updatesTick();
