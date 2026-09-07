@@ -221,6 +221,7 @@ export default async function DashboardPage({
           refillCheckedAt: o.refillCheckedAt?.toISOString() ?? null,
           refillNoIncrease: o.refillNoIncrease,
           refillCanceledAt: o.refillCanceledAt?.toISOString() ?? null,
+          cancelRequestedAt: o.cancelRequestedAt?.toISOString() ?? null,
           // raw.actions.refill true ise refill butonu gösterilir
           refillable: ((o.raw as { actions?: { refill?: boolean } } | null)?.actions?.refill ?? false) === true,
           notes: o.notes.map((n) => ({

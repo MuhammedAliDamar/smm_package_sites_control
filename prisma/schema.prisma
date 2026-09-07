@@ -76,6 +76,7 @@ model Order {
   refillSlackTs       String?
   refillCanceledAt    DateTime?
   refillLastReminderAt DateTime?
+  cancelRequestedAt   DateTime?
   note                String?
   lastNoteAt          DateTime?
   status              String

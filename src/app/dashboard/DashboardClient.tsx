@@ -53,6 +53,7 @@ type OrderRow = {
   provider: string | null; createdAt: string;
   refillRequestedAt: string | null; refillCheckedAt: string | null;
   refillNoIncrease: boolean | null; refillCanceledAt: string | null; refillable: boolean;
+  cancelRequestedAt: string | null;
   notes: { id: number; body: string; createdAt: string }[];
 };
 
@@ -365,6 +366,8 @@ export default function DashboardClient({
   // Sipariş iptal bildirimi (tüm siparişler): aynı kanala FARKLI mesaj. Aktif
   // refill varsa hatırlatmaları da durdurur.
   const [cancelLoading, setCancelLoading] = useState<Record<number, boolean>>({});
+  // İptal talebi verilen siparişler optimistic olarak "Tracking" badge gösterir.
+  const [cancelState, setCancelState] = useState<Record<number, boolean>>({});
   async function cancelOrder(orderId: number) {
     setCancelLoading((p) => ({ ...p, [orderId]: true }));
     try {
@@ -373,11 +376,31 @@ export default function DashboardClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: orderId }),
       });
-      if (res.ok) startTransition(() => router.refresh());
+      if (res.ok) {
+        setCancelState((p) => ({ ...p, [orderId]: true }));
+        startTransition(() => router.refresh());
+      }
     } catch {
       /* sessiz */
     } finally {
       setCancelLoading((p) => ({ ...p, [orderId]: false }));
+    }
+  }
+
+  // İptal takibini kaldır (badge'in × butonu). Slack'e mesaj gitmez.
+  async function uncancelOrder(orderId: number) {
+    try {
+      const res = await fetch("/api/orders/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: orderId, untrack: true }),
+      });
+      if (res.ok) {
+        setCancelState((p) => { const n = { ...p }; delete n[orderId]; return n; });
+        startTransition(() => router.refresh());
+      }
+    } catch {
+      /* sessiz */
     }
   }
 
@@ -889,9 +912,19 @@ export default function DashboardClient({
                         const loading = refillState[o.id]?.loading;
                         const requested = Boolean(o.refillRequestedAt) || localReq;
                         const cLoad = cancelLoading[o.id];
+                        const cancelReq = Boolean(o.cancelRequestedAt) || cancelState[o.id];
 
-                        // Cancel butonu — TÜM siparişlerde (Slack'e farklı mesaj)
-                        const cancelBtn = (
+                        // Cancel: talep verilince "Tracking" badge + ×; yoksa Ban butonu.
+                        const cancelBtn = cancelReq ? (
+                          <>
+                            <span className="badge badge-info" title={o.cancelRequestedAt ? `İptal talebi: ${fmt(o.cancelRequestedAt)}` : "İptal talebi"}>
+                              <Ban size={11} /> Tracking
+                            </span>
+                            <button className="btn btn-icon btn-sm" onClick={() => uncancelOrder(o.id)} title="İptal takibini kaldır">
+                              <X size={12} />
+                            </button>
+                          </>
+                        ) : (
                           <button
                             className="btn btn-icon btn-sm btn-danger"
                             onClick={() => cancelOrder(o.id)}
