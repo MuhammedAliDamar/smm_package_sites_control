@@ -62,15 +62,24 @@ export default async function DashboardPage({
   }
 
   if (sp.refill === "tracking") {
-    ordersWhere.refillRequestedAt = { not: null };
-    ordersWhere.refillCheckedAt = null;
+    // Aktif refill takibi VEYA iptal talebi olan siparişler (ikisi de "Tracking").
+    ordersWhere.AND = [
+      {
+        OR: [
+          { refillRequestedAt: { not: null }, refillCheckedAt: null },
+          { cancelRequestedAt: { not: null } },
+        ],
+      },
+    ];
   } else if (sp.refill === "noincrease") {
     ordersWhere.refillNoIncrease = true;
   } else if (sp.refill === "refilled") {
     ordersWhere.refillCheckedAt = { not: null };
     ordersWhere.refillNoIncrease = false;
   } else if (sp.refill === "any") {
-    ordersWhere.refillRequestedAt = { not: null };
+    ordersWhere.AND = [
+      { OR: [{ refillRequestedAt: { not: null } }, { cancelRequestedAt: { not: null } }] },
+    ];
   }
 
   const q = (sp.q ?? "").trim();
