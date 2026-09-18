@@ -37,7 +37,7 @@ export async function POST(
     return NextResponse.json({ error: "note body required" }, { status: 400 });
   }
 
-  const order = await prisma.order.findUnique({ where: { id }, select: { id: true } });
+  const order = await prisma.order.findUnique({ where: { id }, select: { id: true, creationType: true } });
   if (!order) {
     return NextResponse.json({ error: "order not found" }, { status: 404 });
   }
@@ -55,7 +55,7 @@ export async function POST(
   // SLACK_NOTE_CHANNELS index'i; geçersizse/verilmezse varsayılan webhook.
   let slackSent = false;
   if (data.notify === true) {
-    const text = `Not eklendi — ORDER ID: ${id}\nSource: user\n${note.body}`;
+    const text = `Not eklendi — ORDER ID: ${id}\nSource: ${order.creationType ?? "—"}\n${note.body}`;
     const idx = Number(data.channelId);
     const channel = Number.isInteger(idx) ? env.SLACK_NOTE_CHANNELS[idx] : undefined;
     slackSent = channel ? await postWebhook(channel.url, text) : await sendSlack(text);

@@ -26,7 +26,7 @@ export async function runRefillReminders() {
         { refillLastReminderAt: { lte: cutoff } },
       ],
     },
-    select: { id: true },
+    select: { id: true, creationType: true },
     take: 200,
   });
 
@@ -35,7 +35,7 @@ export async function runRefillReminders() {
   let sent = 0;
   for (const o of orders) {
     const ok = await sendSlack(
-      `${env.SLACK_MENTION}\n⏰ Refill hatırlatması — hâlâ yapılmadı\nORDER ID: ${o.id}\nSource: system`,
+      `${env.SLACK_MENTION}\n⏰ Refill hatırlatması — hâlâ yapılmadı\nORDER ID: ${o.id}\nSource: ${o.creationType ?? "—"}`,
     );
     if (ok) sent++;
     await prisma.order.update({
