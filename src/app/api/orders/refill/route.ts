@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
   });
 
   const slackOk = await sendSlack(
-    `${env.SLACK_MENTION}\nRefill Talebi oluşturuldu.\nORDER ID: ${id}`,
+    `${env.SLACK_MENTION}\nRefill Talebi oluşturuldu.\nORDER ID: ${id}\nSource: user`,
   );
 
   return NextResponse.json({
@@ -109,7 +109,7 @@ export async function PATCH(req: NextRequest) {
       where: { id },
       data: { refillCanceledAt: new Date() },
     });
-    const slackOk = await sendSlack(`${env.SLACK_MENTION}\n🚫 Refill iptal edildi\nORDER ID: ${id}`);
+    const slackOk = await sendSlack(`${env.SLACK_MENTION}\n🚫 Refill iptal edildi\nORDER ID: ${id}\nSource: user`);
     return NextResponse.json({ ok: true, id, canceled: true, slackSent: slackOk });
   }
 

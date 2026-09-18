@@ -55,7 +55,7 @@ export async function POST(
   // SLACK_NOTE_CHANNELS index'i; geçersizse/verilmezse varsayılan webhook.
   let slackSent = false;
   if (data.notify === true) {
-    const text = `Not eklendi — ORDER ID: ${id}\n${note.body}`;
+    const text = `Not eklendi — ORDER ID: ${id}\nSource: user\n${note.body}`;
     const idx = Number(data.channelId);
     const channel = Number.isInteger(idx) ? env.SLACK_NOTE_CHANNELS[idx] : undefined;
     slackSent = channel ? await postWebhook(channel.url, text) : await sendSlack(text);

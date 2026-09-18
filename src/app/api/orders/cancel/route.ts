@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
   });
 
   const slackOk = await sendSlack(
-    `${env.SLACK_MENTION}\n❌ Sipariş İptal talebi\nORDER ID: ${id}`,
+    `${env.SLACK_MENTION}\n❌ Sipariş İptal talebi\nORDER ID: ${id}\nSource: user`,
   );
 
   return NextResponse.json({ ok: true, id, slackSent: slackOk });

@@ -54,7 +54,7 @@ export async function runRefillCheck() {
     } else {
       noIncrease++;
       await sendSlack(
-        `${env.SLACK_MENTION}\n24 saattir Refill yapılmadı\nORDER ID: ${order.id}`,
+        `${env.SLACK_MENTION}\n24 saattir Refill yapılmadı\nORDER ID: ${order.id}\nSource: system`,
       );
     }
 

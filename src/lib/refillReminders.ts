@@ -35,7 +35,7 @@ export async function runRefillReminders() {
   let sent = 0;
   for (const o of orders) {
     const ok = await sendSlack(
-      `${env.SLACK_MENTION}\n⏰ Refill hatırlatması — hâlâ yapılmadı\nORDER ID: ${o.id}`,
+      `${env.SLACK_MENTION}\n⏰ Refill hatırlatması — hâlâ yapılmadı\nORDER ID: ${o.id}\nSource: system`,
     );
     if (ok) sent++;
     await prisma.order.update({
