@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
 
   const order = await prisma.order.findUnique({
     where: { id },
-    select: { id: true, refillRequestedAt: true, creationType: true },
+    select: { id: true, refillRequestedAt: true, username: true },
   });
   if (!order) return NextResponse.json({ error: "order not found" }, { status: 404 });
 
@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
   });
 
   const slackOk = await sendSlack(
-    `${env.SLACK_MENTION}\n❌ Sipariş İptal talebi\nORDER ID: ${id}\nSource: ${order.creationType ?? "—"}`,
+    `${env.SLACK_MENTION}\n❌ Sipariş İptal talebi\nORDER ID: ${id}\nSource: ${order.username ?? "—"}`,
   );
 
   return NextResponse.json({ ok: true, id, slackSent: slackOk });

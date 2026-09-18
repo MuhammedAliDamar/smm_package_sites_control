@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
       startCount: true,
       serviceName: true,
       serviceType: true,
-      creationType: true,
+      username: true,
       refillRequestedAt: true,
     },
   });
@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
   });
 
   const slackOk = await sendSlack(
-    `${env.SLACK_MENTION}\nRefill Talebi oluşturuldu.\nORDER ID: ${id}\nSource: ${order.creationType ?? "—"}`,
+    `${env.SLACK_MENTION}\nRefill Talebi oluşturuldu.\nORDER ID: ${id}\nSource: ${order.username ?? "—"}`,
   );
 
   return NextResponse.json({
@@ -85,7 +85,7 @@ export async function PATCH(req: NextRequest) {
   if (!Number.isInteger(id) || id <= 0) {
     return NextResponse.json({ error: "id required" }, { status: 400 });
   }
-  const order = await prisma.order.findUnique({ where: { id }, select: { id: true, creationType: true } });
+  const order = await prisma.order.findUnique({ where: { id }, select: { id: true, username: true } });
   if (!order) {
     return NextResponse.json({ error: "order not found" }, { status: 404 });
   }
@@ -110,7 +110,7 @@ export async function PATCH(req: NextRequest) {
       where: { id },
       data: { refillCanceledAt: new Date() },
     });
-    const slackOk = await sendSlack(`${env.SLACK_MENTION}\n🚫 Refill iptal edildi\nORDER ID: ${id}\nSource: ${order.creationType ?? "—"}`);
+    const slackOk = await sendSlack(`${env.SLACK_MENTION}\n🚫 Refill iptal edildi\nORDER ID: ${id}\nSource: ${order.username ?? "—"}`);
     return NextResponse.json({ ok: true, id, canceled: true, slackSent: slackOk });
   }
 
